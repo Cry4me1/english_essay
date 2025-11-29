@@ -3,13 +3,85 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowUpRight, GitMerge, Sparkles, PenTool, Zap, BookOpen, ChevronRight } from "lucide-react";
-import {
-  assistantPresets,
-  correctionPayload,
-  featureCards,
-  heroStats,
-  workflowSteps,
-} from "@/lib/mockData";
+
+// 首页静态展示数据
+const heroStats = [
+  { label: "平均分", value: "Band 7.5", hint: "基于 3,200 篇范文" },
+  { label: "每周输出", value: "4.8 小时", hint: "深度写作时长" },
+  { label: "批改吻合率", value: "92%", hint: "与人工评分对齐" },
+];
+
+const featureCards = [
+  {
+    title: "AI 生成",
+    description: "输入题目、语气与字数即可流式生成带结构的范文。",
+    bullets: ["内置 IELTS/TOEFL 模板", "自动分段", "可一键插入编辑器"],
+  },
+  {
+    title: "深度批改",
+    description: "词汇、语法、逻辑与连贯性四维雷达，建议以气泡形式展示。",
+    bullets: ["严格 JSON Schema", "Accept/Reject 工作流", "雷达评分"],
+  },
+  {
+    title: "沉浸式编辑",
+    description: "左右分栏 + 浮动菜单，选中文本即可召唤 Ask AI/翻译/同义词。",
+    bullets: ["全屏专注模式", "选中即提示", "实时统计"],
+  },
+];
+
+const workflowSteps = [
+  {
+    title: "1. 设定题目",
+    detail: "Topic / Tone / Word Count 统一管理，提供常用预设。",
+    duration: "≈30 秒",
+  },
+  {
+    title: "2. AI 生成草稿",
+    detail: "通过 DeepSeek API 输出带结构的初稿，可分段插入。",
+    duration: "≈40 秒",
+  },
+  {
+    title: "3. 深度批改",
+    detail: "点击 Analyze 即返回评分、注释与 Diff 建议。",
+    duration: "≈25 秒",
+  },
+  {
+    title: "4. 发布与复盘",
+    detail: "仪表盘记录 Band 分、热力图与生词本，便于复习。",
+    duration: "实时",
+  },
+];
+
+const assistantPresets = [
+  {
+    title: "Argument · 城市规划",
+    tone: "Academic",
+    words: 280,
+    excerpt: "Discuss how public art funding impacts community identity.",
+  },
+  {
+    title: "General Training · 申请信",
+    tone: "Polite",
+    words: 220,
+    excerpt: "Request flexible working hours after relocating.",
+  },
+  {
+    title: "TOEFL Integrated",
+    tone: "Neutral",
+    words: 320,
+    excerpt: "Summarise lecture vs reading on eco-tourism limits.",
+  },
+];
+
+// API 返回格式预览
+const correctionPayload = {
+  score: 7.4,
+  summary: "词汇和论证结构表现稳健，主要扣分点在语法细节以及段落之间的逻辑衔接。",
+  breakdown: [
+    { label: "词汇", value: 7.5 },
+    { label: "语法", value: 6.5 },
+  ],
+};
 
 const previewJson = JSON.stringify(correctionPayload, null, 2)
   .split("\n")
@@ -65,7 +137,7 @@ export default function Home() {
                 className="inline-flex items-center gap-2 badge-accent"
               >
                 <Zap className="h-3.5 w-3.5" />
-                <span>Focus Mode · Gemini Ready</span>
+                <span>Focus Mode · DeepSeek API</span>
               </motion.div>
 
               <div className="space-y-4">
@@ -97,8 +169,8 @@ export default function Home() {
                 className="text-sm leading-relaxed"
                 style={{ color: "var(--muted)" }}
               >
-                结合 Next.js 14 + Supabase + Gemini 3 的产品蓝图已就绪。
-                当前版本使用 mock JSON 演示完整流程，可浏览落地页、仪表盘与工作台体验。
+                结合 Next.js 14 + Supabase + DeepSeek API 打造的智能写作平台。
+                支持 AI 生成、深度批改、词典查询等完整功能，立即开始你的写作之旅。
               </motion.p>
 
               <motion.div
@@ -173,14 +245,14 @@ export default function Home() {
                     <div className="h-3 w-3 rounded-full bg-yellow-400/80" />
                     <div className="h-3 w-3 rounded-full bg-green-400/80" />
                   </div>
-                  <span className="text-xs text-white/50 ml-2">Mock JSON · /api/correct</span>
+                  <span className="text-xs text-white/50 ml-2">API Response · /api/correct</span>
                 </div>
                 <pre className="overflow-hidden rounded-2xl bg-black/40 p-4 text-xs leading-relaxed text-emerald-300/90 font-mono">
                   <code>{previewJson}</code>
                 </pre>
                 <div className="mt-4 flex items-center justify-between">
                   <span className="text-xs text-white/40">
-                    * 数据来自 mockData.ts
+                    * 批改 API 返回格式示例
                   </span>
                   <div className="badge-accent text-[10px]">
                     <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />

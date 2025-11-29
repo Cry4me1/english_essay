@@ -100,7 +100,7 @@ export function SiteFooter() {
               技术栈
             </h3>
             <div className="flex flex-wrap gap-2">
-              {["Next.js 14", "TypeScript", "Tailwind", "Supabase", "Gemini AI"].map((tech) => (
+              {["Next.js 14", "TypeScript", "Tailwind", "Supabase", "DeepSeek API"].map((tech) => (
                 <span
                   key={tech}
                   className="badge-neu"

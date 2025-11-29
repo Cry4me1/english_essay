@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
   ArrowLeft, 
@@ -14,13 +15,10 @@ import {
   Eye,
   EyeOff,
   Github,
-  Chrome
+  Wand2,
+  AlertCircle
 } from "lucide-react";
-
-const mockLoginResponse = {
-  status: "sent",
-  message: "已向邮箱发送 Magic Link（Mock）",
-};
+import { useAuth } from "@/lib/hooks/useAuth";
 
 const features = [
   "AI 驱动的写作辅助",
@@ -29,20 +27,104 @@ const features = [
   "沉浸式写作环境",
 ];
 
+type LoginMode = "password" | "magic-link";
+
 export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const { signInWithPassword, signUp, signInWithMagicLink, signInWithOAuth, isLoading: authLoading } = useAuth();
+  
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [status, setStatus] = useState<"idle" | "loading" | "sent">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [isSignUp, setIsSignUp] = useState(false);
+  const [loginMode, setLoginMode] = useState<LoginMode>("password");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setStatus("loading");
-    setTimeout(() => {
-      setStatus("sent");
-    }, 1200);
+  // 处理 URL 中的错误参数
+  useEffect(() => {
+    const urlError = searchParams.get("error");
+    if (urlError === "auth_callback_error") {
+      setError("认证失败，请重试");
+    }
+  }, [searchParams]);
+
+  const resetForm = () => {
+    setStatus("idle");
+    setMessage("");
+    setError("");
   };
+
+  const handlePasswordAuth = async (e: FormEvent) => {
+    e.preventDefault();
+    setStatus("loading");
+    setError("");
+
+    if (isSignUp) {
+      // 注册
+      const result = await signUp(email, password);
+      if (result.error) {
+        setError(result.error);
+        setStatus("error");
+      } else if (result.requiresEmailConfirmation) {
+        setMessage("注册成功！请查收邮箱验证链接");
+        setStatus("success");
+      }
+      // 如果直接成功，useAuth hook 会处理跳转
+    } else {
+      // 登录
+      const result = await signInWithPassword(email, password);
+      if (result.error) {
+        setError(result.error);
+        setStatus("error");
+      }
+      // 成功时 useAuth hook 会处理跳转
+    }
+  };
+
+  const handleMagicLink = async (e: FormEvent) => {
+    e.preventDefault();
+    setStatus("loading");
+    setError("");
+
+    const result = await signInWithMagicLink(email);
+    if (result.error) {
+      setError(result.error);
+      setStatus("error");
+    } else {
+      setMessage("登录链接已发送到您的邮箱，请查收");
+      setStatus("success");
+    }
+  };
+
+  const handleGitHubLogin = async () => {
+    setStatus("loading");
+    setError("");
+    
+    const result = await signInWithOAuth("github");
+    if (result.error) {
+      setError(result.error);
+      setStatus("idle");
+    }
+    // OAuth 会重定向，不需要手动处理成功
+  };
+
+  const handleSubmit = (e: FormEvent) => {
+    if (loginMode === "magic-link") {
+      handleMagicLink(e);
+    } else {
+      handlePasswordAuth(e);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center">
+        <LoaderCircle className="h-8 w-8 animate-spin" style={{ color: "var(--accent)" }} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center py-10">
@@ -73,15 +155,6 @@ export default function LoginPage() {
               <div 
                 className="absolute -bottom-10 -left-10 h-48 w-48 rounded-full opacity-15"
                 style={{ background: "radial-gradient(circle, white 0%, transparent 70%)" }}
-              />
-              {/* Floating shapes */}
-              <motion.div
-                animate={{ 
-                  y: [0, -20, 0],
-                  rotate: [0, 5, 0]
-                }}
-                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute top-20 right-10 h-16 w-16 rounded-2xl bg-white/10"
               />
               <motion.div
                 animate={{ 
@@ -156,13 +229,91 @@ export default function LoginPage() {
                 <p className="text-sm" style={{ color: "var(--muted)" }}>
                   {isSignUp 
                     ? "注册以开始你的智能写作之旅" 
-                    : "当前为前端 Mock，接入 Supabase Auth 后即可使用"
+                    : "使用邮箱密码或第三方账号登录"
                   }
                 </p>
               </div>
 
-              {status !== "sent" ? (
+              {/* Error Message */}
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 p-3 rounded-xl text-sm"
+                  style={{ background: "var(--error-bg)", color: "var(--error)" }}
+                >
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  {error}
+                </motion.div>
+              )}
+
+              {status === "success" ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="space-y-6"
+                >
+                  <div className="neu-inset p-6 rounded-2xl text-center">
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
+                      className="mx-auto mb-4 h-16 w-16 rounded-full flex items-center justify-center"
+                      style={{ background: "var(--success-bg)" }}
+                    >
+                      <Check className="h-8 w-8" style={{ color: "var(--success)" }} />
+                    </motion.div>
+                    <h3 className="serif text-xl mb-2">
+                      {loginMode === "magic-link" ? "邮件已发送" : "注册成功"}
+                    </h3>
+                    <p className="text-sm" style={{ color: "var(--muted)" }}>
+                      {message}
+                    </p>
+                  </div>
+
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={resetForm}
+                    className="neu-button w-full py-3 text-sm font-medium"
+                  >
+                    返回登录
+                  </motion.button>
+                </motion.div>
+              ) : (
                 <form className="space-y-5" onSubmit={handleSubmit}>
+                  {/* Login Mode Toggle (only for login, not signup) */}
+                  {!isSignUp && (
+                    <div className="flex gap-2 p-1 rounded-xl" style={{ background: "var(--background)" }}>
+                      <button
+                        type="button"
+                        onClick={() => { setLoginMode("password"); resetForm(); }}
+                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                          loginMode === "password" ? "neu-float" : ""
+                        }`}
+                        style={{ 
+                          color: loginMode === "password" ? "var(--foreground)" : "var(--muted)"
+                        }}
+                      >
+                        <Lock className="h-3.5 w-3.5 inline mr-1.5" />
+                        密码登录
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setLoginMode("magic-link"); resetForm(); }}
+                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                          loginMode === "magic-link" ? "neu-float" : ""
+                        }`}
+                        style={{ 
+                          color: loginMode === "magic-link" ? "var(--foreground)" : "var(--muted)"
+                        }}
+                      >
+                        <Wand2 className="h-3.5 w-3.5 inline mr-1.5" />
+                        Magic Link
+                      </button>
+                    </div>
+                  )}
+
                   {/* Email Input */}
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
@@ -173,52 +324,46 @@ export default function LoginPage() {
                       required
                       type="email"
                       value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="neu-input w-full px-5 py-4 text-sm"
                       placeholder="you@example.com"
                     />
                   </div>
 
-                  {/* Password Input */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-                      <Lock className="h-3.5 w-3.5" />
-                      密码
-                    </label>
-                    <div className="relative">
-                      <input
-                        required
-                        type={showPassword ? "text" : "password"}
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        className="neu-input w-full px-5 py-4 pr-12 text-sm"
-                        placeholder="••••••••"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 p-1"
-                        style={{ color: "var(--muted)" }}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Remember & Forgot */}
-                  {!isSignUp && (
-                    <div className="flex items-center justify-between text-xs">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <div className="neu-inset h-5 w-5 rounded-md flex items-center justify-center">
-                          <input type="checkbox" className="sr-only peer" />
-                          <Check className="h-3 w-3 opacity-0 peer-checked:opacity-100 transition-opacity" style={{ color: "var(--accent)" }} />
-                        </div>
-                        <span style={{ color: "var(--muted)" }}>记住我</span>
+                  {/* Password Input (only for password mode or signup) */}
+                  {(loginMode === "password" || isSignUp) && (
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                        <Lock className="h-3.5 w-3.5" />
+                        密码 {isSignUp && <span className="normal-case">(至少6位)</span>}
                       </label>
-                      <button type="button" className="hover:text-accent transition-colors" style={{ color: "var(--accent)" }}>
-                        忘记密码？
-                      </button>
+                      <div className="relative">
+                        <input
+                          required
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="neu-input w-full px-5 py-4 pr-12 text-sm"
+                          placeholder="••••••••"
+                          minLength={6}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 p-1"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </div>
+                  )}
+
+                  {/* Magic Link hint */}
+                  {loginMode === "magic-link" && !isSignUp && (
+                    <p className="text-xs" style={{ color: "var(--muted)" }}>
+                      我们将发送一个登录链接到您的邮箱，点击即可登录，无需密码
+                    </p>
                   )}
 
                   {/* Submit Button */}
@@ -236,7 +381,12 @@ export default function LoginPage() {
                       </>
                     ) : (
                       <>
-                        {isSignUp ? "注册" : "登录"}
+                        {isSignUp 
+                          ? "注册" 
+                          : loginMode === "magic-link" 
+                            ? "发送登录链接" 
+                            : "登录"
+                        }
                         <ArrowUpRight className="h-4 w-4" />
                       </>
                     )}
@@ -250,34 +400,25 @@ export default function LoginPage() {
                     </span>
                   </div>
 
-                  {/* Social Login */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="neu-button py-3 text-sm font-medium flex items-center justify-center gap-2"
-                    >
-                      <Github className="h-4 w-4" />
-                      GitHub
-                    </motion.button>
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="neu-button py-3 text-sm font-medium flex items-center justify-center gap-2"
-                    >
-                      <Chrome className="h-4 w-4" />
-                      Google
-                    </motion.button>
-                  </div>
+                  {/* Social Login - GitHub Only (国内可用) */}
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleGitHubLogin}
+                    disabled={status === "loading"}
+                    className="neu-button w-full py-3 text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <Github className="h-4 w-4" />
+                    使用 GitHub 登录
+                  </motion.button>
 
                   {/* Toggle Sign Up / Sign In */}
                   <p className="text-center text-sm" style={{ color: "var(--muted)" }}>
                     {isSignUp ? "已有账户？" : "还没有账户？"}
                     <button
                       type="button"
-                      onClick={() => setIsSignUp(!isSignUp)}
+                      onClick={() => { setIsSignUp(!isSignUp); resetForm(); setLoginMode("password"); }}
                       className="ml-1 font-medium hover:underline"
                       style={{ color: "var(--accent)" }}
                     >
@@ -285,44 +426,6 @@ export default function LoginPage() {
                     </button>
                   </p>
                 </form>
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-6"
-                >
-                  <div className="neu-inset p-6 rounded-2xl text-center">
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
-                      className="mx-auto mb-4 h-16 w-16 rounded-full flex items-center justify-center"
-                      style={{ background: "var(--success-bg)" }}
-                    >
-                      <Check className="h-8 w-8" style={{ color: "var(--success)" }} />
-                    </motion.div>
-                    <h3 className="serif text-xl mb-2">邮件已发送</h3>
-                    <p className="text-sm" style={{ color: "var(--muted)" }}>
-                      {mockLoginResponse.message}
-                    </p>
-                  </div>
-
-                  <div className="neu-inset p-4 rounded-xl">
-                    <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>Mock Response:</p>
-                    <pre className="text-xs overflow-x-auto p-3 rounded-lg" style={{ background: "var(--background)" }}>
-                      {JSON.stringify(mockLoginResponse, null, 2)}
-                    </pre>
-                  </div>
-
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setStatus("idle")}
-                    className="neu-button w-full py-3 text-sm font-medium"
-                  >
-                    重新发送
-                  </motion.button>
-                </motion.div>
               )}
             </motion.div>
           </div>

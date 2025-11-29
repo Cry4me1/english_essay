@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { 
@@ -11,20 +12,21 @@ import {
   Zap, 
   BookOpen,
   ChevronRight,
-  Lightbulb
+  Lightbulb,
+  LoaderCircle,
+  FileText
 } from "lucide-react";
-import {
-  dashboardHeatmap,
-  dashboardStats,
-  recentDocuments,
-  vocabularySet,
-} from "@/lib/mockData";
+import type { Essay, VocabularyItem, PaginatedResponse } from "@/lib/types/database";
+
+// 热力图数据类型
+interface HeatmapCell {
+  id: string;
+  day: number;
+  week: number;
+  intensity: number;
+}
 
 const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-const groupedHeatmap = Array.from({ length: 4 }, (_, weekIndex) =>
-  dashboardHeatmap.filter((cell) => cell.week === weekIndex)
-);
 
 // 新拟态风格的颜色渐变
 const getIntensityStyle = (intensity: number) => {
@@ -73,7 +75,130 @@ const itemVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
+// 格式化日期
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) {
+    return `今天 · ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  } else if (diffDays === 1) {
+    return `昨天 · ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  } else {
+    return `${date.getMonth() + 1}月 ${date.getDate()}日`;
+  }
+}
+
+// 获取文章状态显示文本
+function getStatusText(essay: Essay): string {
+  if (essay.ai_score !== null) return "已批改";
+  if (essay.status === "draft") return "草稿";
+  if (essay.status === "completed") return "已完成";
+  return "未批改";
+}
+
 export default function DashboardPage() {
+  const [essays, setEssays] = useState<Essay[]>([]);
+  const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 获取数据
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        // 并行获取文章和生词
+        const [essaysRes, vocabRes] = await Promise.all([
+          fetch('/api/essays?limit=5'),
+          fetch('/api/vocabulary?limit=5'),
+        ]);
+
+        if (essaysRes.ok) {
+          const essaysData: PaginatedResponse<Essay> = await essaysRes.json();
+          setEssays(essaysData.data || []);
+        }
+
+        if (vocabRes.ok) {
+          const vocabData: PaginatedResponse<VocabularyItem> = await vocabRes.json();
+          setVocabulary(vocabData.data || []);
+        }
+      } catch (err) {
+        console.error('获取数据失败:', err);
+        setError('获取数据失败，请刷新重试');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  // 计算统计数据
+  const stats = useMemo(() => {
+    const totalWords = essays.reduce((sum, e) => sum + (e.word_count || 0), 0);
+    const scoredEssays = essays.filter(e => e.ai_score !== null);
+    const avgScore = scoredEssays.length > 0 
+      ? (scoredEssays.reduce((sum, e) => sum + (e.ai_score || 0), 0) / scoredEssays.length).toFixed(1)
+      : '-';
+
+    return [
+      { label: "平均分数", value: avgScore === '-' ? '-' : `Band ${avgScore}`, trend: `共 ${scoredEssays.length} 篇已批改` },
+      { label: "累计字数", value: totalWords.toLocaleString(), trend: `共 ${essays.length} 篇文章` },
+      { label: "生词收藏", value: `${vocabulary.length} 词`, trend: "继续积累" },
+      { label: "已批改", value: `${scoredEssays.length} 篇`, trend: "AI 深度批改" },
+    ];
+  }, [essays, vocabulary]);
+
+  // 生成热力图数据（基于真实文章创建日期）
+  const heatmapData = useMemo((): HeatmapCell[] => {
+    const now = new Date();
+    const cells: HeatmapCell[] = [];
+    
+    // 统计每天的写作量
+    const dailyWords: Record<string, number> = {};
+    essays.forEach(essay => {
+      const date = new Date(essay.created_at);
+      const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      dailyWords[key] = (dailyWords[key] || 0) + (essay.word_count || 0);
+    });
+
+    // 生成28天的热力图
+    for (let i = 27; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      const words = dailyWords[key] || 0;
+      
+      // 根据字数计算强度 (0-4)
+      let intensity = 0;
+      if (words > 0) intensity = 1;
+      if (words > 200) intensity = 2;
+      if (words > 500) intensity = 3;
+      if (words > 1000) intensity = 4;
+
+      const dayIndex = 27 - i;
+      cells.push({
+        id: `cell-${dayIndex}`,
+        day: dayIndex % 7,
+        week: Math.floor(dayIndex / 7),
+        intensity,
+      });
+    }
+    return cells;
+  }, [essays]);
+
+  // 按周分组热力图
+  const groupedHeatmap = useMemo(() => {
+    return Array.from({ length: 4 }, (_, weekIndex) =>
+      heatmapData.filter((cell) => cell.week === weekIndex)
+    );
+  }, [heatmapData]);
+
   return (
     <motion.div
       variants={containerVariants}
@@ -96,7 +221,7 @@ export default function DashboardPage() {
             </div>
             <h1 className="serif text-3xl md:text-4xl">写作仪表盘</h1>
             <p className="text-sm" style={{ color: "var(--muted)" }}>
-              统计数据均来自 mockData.ts，用于演示 Band 分、热力图与最近文档。
+              追踪你的写作进度，查看评分趋势与最近文档。
             </p>
           </div>
           <Link href="/write">
@@ -117,7 +242,7 @@ export default function DashboardPage() {
         variants={itemVariants}
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
-        {dashboardStats.map((stat, index) => (
+        {stats.map((stat, index) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 20 }}
@@ -226,7 +351,7 @@ export default function DashboardPage() {
           </div>
         </motion.section>
 
-        {/* Vocabulary Section */}
+          {/* Vocabulary Section */}
         <motion.section
           variants={itemVariants}
           className="neu-float p-6"
@@ -240,7 +365,7 @@ export default function DashboardPage() {
                 </p>
               </div>
               <p className="text-sm" style={{ color: "var(--muted)" }}>
-                共 {vocabularySet.length} 个单词
+                共 {vocabulary.length} 个单词
               </p>
             </div>
             <motion.button
@@ -253,30 +378,57 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-4">
-            {vocabularySet.map((item, index) => (
-              <motion.div
-                key={item.word}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                whileHover={{ x: 4 }}
-                className="neu-inset p-4 cursor-pointer group"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium">{item.word}</p>
-                  <ChevronRight 
-                    className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" 
-                    style={{ color: "var(--accent)" }}
-                  />
-                </div>
-                <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>
-                  {item.definition}
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <LoaderCircle className="h-6 w-6 animate-spin" style={{ color: "var(--accent)" }} />
+              </div>
+            ) : vocabulary.length === 0 ? (
+              <div className="neu-inset p-6 rounded-xl text-center">
+                <BookOpen className="h-8 w-8 mx-auto mb-2" style={{ color: "var(--muted)" }} />
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  暂无收藏的生词
                 </p>
-                <p className="text-sm italic" style={{ color: "var(--muted)" }}>
-                  "{item.context}"
+                <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+                  在工作台双击单词可查词并收藏
                 </p>
-              </motion.div>
-            ))}
+              </div>
+            ) : (
+              vocabulary.map((item, index) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  whileHover={{ x: 4 }}
+                  className="neu-inset p-4 cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{item.word}</p>
+                      {item.phonetic && (
+                        <span className="text-xs" style={{ color: "var(--muted)" }}>
+                          {item.phonetic}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight 
+                      className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" 
+                      style={{ color: "var(--accent)" }}
+                    />
+                  </div>
+                  {item.definition && (
+                    <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>
+                      {item.definition}
+                    </p>
+                  )}
+                  {item.context_sentence && (
+                    <p className="text-sm italic" style={{ color: "var(--muted)" }}>
+                      "{item.context_sentence}"
+                    </p>
+                  )}
+                </motion.div>
+              ))
+            )}
           </div>
         </motion.section>
       </div>
@@ -303,51 +455,80 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {recentDocuments.map((doc, index) => (
-              <motion.div
-                key={doc.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <LoaderCircle className="h-6 w-6 animate-spin" style={{ color: "var(--accent)" }} />
+              </div>
+            ) : essays.length === 0 ? (
+              <div className="neu-inset p-6 rounded-xl text-center">
+                <FileText className="h-8 w-8 mx-auto mb-2" style={{ color: "var(--muted)" }} />
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  暂无文章记录
+                </p>
                 <Link href="/write">
-                  <motion.div
-                    whileHover={{ scale: 1.01, x: 4 }}
-                    className="neu-raised p-4 cursor-pointer group"
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="mt-3 neu-button-accent px-4 py-2 text-xs font-medium"
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <p className="font-medium text-sm pr-4 line-clamp-1">{doc.title}</p>
-                      <span className="badge-accent text-[10px] flex-shrink-0">
-                        Band {doc.band}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "var(--muted)" }}>
-                        {doc.updatedAt}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span 
-                          className="badge-neu text-[10px]"
-                          style={{ 
-                            background: doc.status === "已批改" 
-                              ? "var(--success-bg)" 
-                              : doc.status === "待润色"
-                              ? "var(--warning-bg)"
-                              : "var(--background-elevated)"
-                          }}
-                        >
-                          {doc.status}
-                        </span>
-                        <ArrowUpRight 
-                          className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" 
-                          style={{ color: "var(--accent)" }}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
+                    开始写作
+                  </motion.button>
                 </Link>
-              </motion.div>
-            ))}
+              </div>
+            ) : (
+              essays.map((essay, index) => {
+                const statusText = getStatusText(essay);
+                return (
+                  <motion.div
+                    key={essay.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                  >
+                    <Link href="/write">
+                      <motion.div
+                        whileHover={{ scale: 1.01, x: 4 }}
+                        className="neu-raised p-4 cursor-pointer group"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <p className="font-medium text-sm pr-4 line-clamp-1">
+                            {essay.title || "无标题"}
+                          </p>
+                          {essay.ai_score !== null && (
+                            <span className="badge-accent text-[10px] flex-shrink-0">
+                              Band {essay.ai_score}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs" style={{ color: "var(--muted)" }}>
+                            {formatDate(essay.updated_at)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span 
+                              className="badge-neu text-[10px]"
+                              style={{ 
+                                background: statusText === "已批改" 
+                                  ? "var(--success-bg)" 
+                                  : statusText === "草稿"
+                                  ? "var(--warning-bg)"
+                                  : "var(--background-elevated)"
+                              }}
+                            >
+                              {statusText}
+                            </span>
+                            <ArrowUpRight 
+                              className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" 
+                              style={{ color: "var(--accent)" }}
+                            />
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Link>
+                  </motion.div>
+                );
+              })
+            )}
           </div>
         </motion.section>
 
@@ -364,48 +545,81 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-4">
-            <h3 className="serif text-2xl">
-              逻辑得分持续拉升，建议把注意力放在语法一致性。
-            </h3>
-            <p className="text-sm" style={{ color: "var(--muted)" }}>
-              根据 mock 数据，近三次批改的语法平均分 6.3，主要集中在主谓一致与定冠词缺失。
-              建议在工作台使用浮动菜单的 Ask AI 模块生成语法检查列表。
-            </p>
+            {essays.length === 0 ? (
+              <>
+                <h3 className="serif text-2xl">
+                  开始你的写作之旅
+                </h3>
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  还没有写作记录。前往工作台创建你的第一篇文章，AI 将为你提供深度批改和建议。
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="serif text-2xl">
+                  {essays.filter(e => e.ai_score !== null).length > 0 
+                    ? "继续保持，你的写作水平正在提升！" 
+                    : "提交文章进行 AI 批改，获取详细反馈"}
+                </h3>
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  你已创建 {essays.length} 篇文章，累计 {essays.reduce((sum, e) => sum + (e.word_count || 0), 0).toLocaleString()} 词。
+                  {essays.filter(e => e.ai_score !== null).length > 0 
+                    ? `平均分数 Band ${(essays.filter(e => e.ai_score !== null).reduce((sum, e) => sum + (e.ai_score || 0), 0) / essays.filter(e => e.ai_score !== null).length).toFixed(1)}。`
+                    : "使用批改功能获取详细的评分和改进建议。"
+                  }
+                </p>
+              </>
+            )}
 
-            {/* Progress Bars */}
-            <div className="space-y-3 pt-2">
-              {[
-                { label: "词汇", value: 7.5 },
-                { label: "语法", value: 6.3 },
-                { label: "逻辑", value: 7.2 },
-                { label: "连贯性", value: 7.0 },
-              ].map((item) => (
-                <div key={item.label} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span style={{ color: "var(--muted)" }}>{item.label}</span>
-                    <span style={{ color: "var(--accent)" }}>Band {item.value}</span>
-                  </div>
-                  <div className="progress-neu">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      whileInView={{ width: `${(item.value / 9) * 100}%` }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 1, ease: "easeOut" }}
-                      className="progress-neu-fill"
-                    />
-                  </div>
+            {/* 显示最近批改的分数明细 */}
+            {(() => {
+              const latestScored = essays.find(e => e.ai_feedback?.breakdown);
+              if (!latestScored?.ai_feedback?.breakdown) return null;
+              
+              return (
+                <div className="space-y-3 pt-2">
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>最近批改得分明细</p>
+                  {latestScored.ai_feedback.breakdown.map((item) => (
+                    <div key={item.label} className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span style={{ color: "var(--muted)" }}>{item.label}</span>
+                        <span style={{ color: "var(--accent)" }}>Band {item.value}</span>
+                      </div>
+                      <div className="progress-neu">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          whileInView={{ width: `${(item.value / 9) * 100}%` }}
+                          viewport={{ once: true }}
+                          transition={{ duration: 1, ease: "easeOut" }}
+                          className="progress-neu-fill"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             <div className="neu-inset p-4 mt-4">
               <p className="text-xs" style={{ color: "var(--muted)" }}>
-                💡 数据说明：所有指标使用 mockData.ts 提供的 JSON 对象，便于后续替换成真实 API 响应。
+                💡 建议：保持每日写作习惯，使用 AI 批改功能持续提升写作水平。
               </p>
             </div>
           </div>
         </motion.section>
       </div>
+
+      {/* Error Toast */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-4 right-4 neu-raised p-4 rounded-xl"
+          style={{ borderLeft: "3px solid var(--error)" }}
+        >
+          <p className="text-sm">{error}</p>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

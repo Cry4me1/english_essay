@@ -1,6 +1,6 @@
 ## 项目简介
 
-AI 英语作文平台旨在为雅思/托福等长篇写作场景提供“创作 + 批改”闭环体验。技术栈基于 Next.js 16（App Router）、Tailwind CSS v4、Shadcn/UI、Supabase 以及 Gemini 3。
+AI 英语作文平台旨在为雅思/托福等长篇写作场景提供"创作 + 批改"闭环体验。技术栈基于 Next.js 16（App Router）、Tailwind CSS v4、Shadcn/UI、Supabase，并接入 DeepSeek API。
 
 ## 环境准备
 
@@ -20,7 +20,7 @@ AI 英语作文平台旨在为雅思/托福等长篇写作场景提供“创作 
 
    - `NEXT_PUBLIC_SUPABASE_URL`: Supabase 项目 URL  
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase 匿名 Key  
-   - `GOOGLE_GENERATIVE_AI_API_KEY`: Gemini 1.5/3 API Key
+   - `DEEPSEEK_API_KEY`: DeepSeek API Key
 
 3. Supabase 数据库
 

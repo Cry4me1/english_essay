@@ -1,18 +1,7 @@
 import type { Metadata } from "next";
-import { Inter, Noto_Serif } from "next/font/google";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-
-const notoSerif = Noto_Serif({
-  subsets: ["latin"],
-  variable: "--font-noto-serif",
-});
 
 export const metadata: Metadata = {
   title: "AI 英语作文工作台 | Essay Studio",
@@ -27,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body
-        className={`${inter.variable} ${notoSerif.variable} antialiased`}
+        className="antialiased"
         style={{ background: "var(--background)", color: "var(--foreground)" }}
       >
         <div className="relative min-h-screen bg-grid">

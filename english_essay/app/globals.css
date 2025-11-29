@@ -44,8 +44,9 @@
   --color-muted: var(--muted);
   --color-stroke: var(--stroke);
   --color-accent: var(--accent);
-  --font-sans: var(--font-inter);
-  --font-serif: var(--font-noto-serif);
+  /* 使用系统字体栈，避免 Google Fonts 在国内的访问问题 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-serif: Georgia, "Noto Serif SC", "Source Han Serif SC", "Source Han Serif CN", STSong, SimSun, serif;
 }
 
 *,
@@ -63,7 +64,8 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), "Inter", "Helvetica Neue", Arial, sans-serif;
+  /* 系统字体栈 - 国内用户无需加载外部字体 */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
   line-height: 1.6;
   overflow-x: hidden;
 }
@@ -78,9 +80,9 @@ body {
   background-size: 100% 100%, 100% 100%, 60px 60px, 60px 60px;
 }
 
-/* 字体样式 */
+/* 衬线字体 - 用于正文阅读/写作区域 */
 .serif {
-  font-family: var(--font-noto-serif), "Noto Serif", Georgia, serif;
+  font-family: Georgia, "Noto Serif SC", "Source Han Serif SC", "Source Han Serif CN", STSong, SimSun, serif;
 }
 
 /* ==================== 新拟态样式 ==================== */
@@ -296,8 +298,10 @@ body {
   background: var(--glass-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 32px var(--glass-shadow);
+  border: none;
+  box-shadow: 
+    0 8px 32px var(--glass-shadow),
+    inset 0 0 0 1px var(--glass-border);
 }
 
 .glass-dark {
@@ -510,4 +514,250 @@ a:not([class]) {
   margin-left: 2px;
   color: var(--accent);
   animation: blink 1s step-end infinite;
+}
+
+/* ==================== 编辑器高亮系统 ==================== */
+
+/* 高亮层容器 - 与 textarea 完美对齐 */
+.highlight-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 20px;
+  font-family: Georgia, "Noto Serif SC", "Source Han Serif SC", STSong, SimSun, serif;
+  font-size: 14px;
+  line-height: 32px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  z-index: 2;
+  background: transparent;
+}
+
+/* 高亮层中的普通文本 - 完全透明占位 */
+.highlight-overlay > span:not(.highlight-mark) {
+  color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 高亮标记通用样式 */
+.highlight-mark {
+  position: relative;
+  border-radius: 3px;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 2px 4px;
+  margin: 0 -2px;
+  color: transparent;
+  display: inline;
+}
+
+.highlight-mark:hover {
+  filter: brightness(0.92);
+}
+
+/* 带高亮的编辑器样式 */
+.editor-with-highlights {
+  background: transparent !important;
+  position: relative;
+  z-index: 10;
+}
+
+/* 高亮类型 - 语法错误 */
+.highlight-grammar {
+  background-color: rgba(239, 68, 68, 0.18);
+  border-bottom: 2px solid #ef4444;
+}
+
+.highlight-grammar:hover {
+  background-color: rgba(239, 68, 68, 0.28);
+}
+
+.highlight-grammar.selected {
+  background-color: rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.4);
+}
+
+/* 高亮类型 - 词汇问题 */
+.highlight-vocabulary {
+  background-color: rgba(245, 158, 11, 0.18);
+  border-bottom: 2px solid #f59e0b;
+}
+
+.highlight-vocabulary:hover {
+  background-color: rgba(245, 158, 11, 0.28);
+}
+
+.highlight-vocabulary.selected {
+  background-color: rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.4);
+}
+
+/* 高亮类型 - 逻辑问题 */
+.highlight-logic {
+  background-color: rgba(91, 95, 199, 0.18);
+  border-bottom: 2px solid var(--accent);
+}
+
+.highlight-logic:hover {
+  background-color: rgba(91, 95, 199, 0.28);
+}
+
+.highlight-logic.selected {
+  background-color: rgba(91, 95, 199, 0.35);
+  box-shadow: 0 0 0 2px rgba(91, 95, 199, 0.4);
+}
+
+/* 高亮标记的 tooltip */
+.highlight-mark::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  white-space: nowrap;
+  color: white;
+  background: var(--foreground);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 100;
+}
+
+.highlight-mark:hover::before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-8px);
+}
+
+/* 高亮脉冲动画 - 用于选中状态 */
+@keyframes highlight-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px currentColor;
+  }
+  50% {
+    box-shadow: 0 0 0 4px currentColor;
+  }
+}
+
+.highlight-mark.selected {
+  animation: highlight-pulse 1.5s ease-in-out infinite;
+}
+
+/* ==================== 移动端适配 ==================== */
+
+/* Safe area for iOS devices with notch/home indicator */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Mobile bottom tab bar */
+@media (max-width: 1023px) {
+  /* Adjust body padding for bottom tab bar */
+  body {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  
+  /* Reduce padding on mobile */
+  .neu-float {
+    border-radius: 20px;
+    box-shadow: 
+      8px 8px 20px var(--shadow-dark),
+      -8px -8px 20px var(--shadow-light),
+      0 2px 12px rgba(0,0,0,0.05);
+  }
+  
+  .neu-float:hover {
+    transform: none;
+    box-shadow: 
+      8px 8px 20px var(--shadow-dark),
+      -8px -8px 20px var(--shadow-light),
+      0 2px 12px rgba(0,0,0,0.05);
+  }
+  
+  /* Smaller highlight tooltips on mobile */
+  .highlight-mark::before {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+  
+  /* Hide tooltip on touch devices, use Sheet instead */
+  @media (hover: none) {
+    .highlight-mark::before {
+      display: none;
+    }
+  }
+}
+
+/* Mobile Sheet/Drawer styles */
+[data-slot="sheet-content"] {
+  background: var(--background-elevated) !important;
+  border-top-left-radius: 24px !important;
+  border-top-right-radius: 24px !important;
+}
+
+[data-slot="sheet-content"]::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 4px;
+  background: var(--muted);
+  border-radius: 2px;
+  opacity: 0.3;
+}
+
+/* Override sheet overlay for better visibility */
+[data-slot="sheet-overlay"] {
+  background: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Mobile annotation underline indicator */
+@media (max-width: 1023px) {
+  .highlight-mark {
+    border-bottom-width: 3px;
+  }
+  
+  .highlight-mark.selected {
+    border-bottom-width: 4px;
+  }
+}
+
+/* Prevent pull-to-refresh on mobile when scrolling */
+@media (max-width: 1023px) {
+  html, body {
+    overscroll-behavior: none;
+  }
+}
+
+/* Mobile bottom nav animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
 }
