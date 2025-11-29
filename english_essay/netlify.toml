@@ -1,24 +1,18 @@
 [build]
   command = "npm run build"
-  publish = ".next"
+  # 不要设置 publish，让 Next.js 插件自动处理
 
 [build.environment]
   NODE_VERSION = "20"
 
-# Next.js 插件自动处理 SSR、API Routes 和 Edge Middleware
+# Next.js Runtime（Netlify 官方推荐方式）
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# 安全相关 Headers
+# 安全 Headers
 [[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-
-# 静态资源长期缓存
-[[headers]]
-  for = "/_next/static/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
