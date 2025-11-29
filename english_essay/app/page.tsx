@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowUpRight, GitMerge, Sparkles, PenTool, Zap, BookOpen, ChevronRight } from "lucide-react";
@@ -88,7 +89,7 @@ const previewJson = JSON.stringify(correctionPayload, null, 2)
   .slice(0, 14)
   .join("\n");
 
-const iconMap: Record<string, JSX.Element> = {
+const iconMap: Record<string, React.ReactNode> = {
   "AI 生成": <Sparkles className="h-5 w-5" />,
   "深度批改": <GitMerge className="h-5 w-5" />,
   "沉浸式编辑": <PenTool className="h-5 w-5" />,
