@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState, useEffect } from "react";
+import { FormEvent, useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -29,7 +29,7 @@ const features = [
 
 type LoginMode = "password" | "magic-link";
 
-export default function LoginPage() {
+function LoginContent() {
   const searchParams = useSearchParams();
   const { signInWithPassword, signUp, signInWithMagicLink, signInWithOAuth, isLoading: authLoading } = useAuth();
   
@@ -432,5 +432,23 @@ export default function LoginPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+// 加载占位符
+function LoginFallback() {
+  return (
+    <div className="min-h-[80vh] flex items-center justify-center">
+      <LoaderCircle className="h-8 w-8 animate-spin" style={{ color: "var(--accent)" }} />
+    </div>
+  );
+}
+
+// 主导出：用 Suspense 包裹
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginContent />
+    </Suspense>
   );
 }
