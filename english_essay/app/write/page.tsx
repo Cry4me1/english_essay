@@ -493,6 +493,43 @@ function WritePageContent() {
       const data: CorrectionPayload = await response.json();
       setCorrectionData(data);
       setSelectedAnnotationId(data.annotations[0]?.id || null);
+
+      // 自动保存分数到数据库
+      try {
+        let targetId = currentEssayId;
+
+        // 如果还没保存过文章，先创建
+        if (!targetId) {
+          const createRes = await createEssay({
+            title: title || '无标题',
+            content: normalizedContent,
+          });
+          if (createRes.data) {
+            targetId = createRes.data.id;
+            setCurrentEssayId(targetId);
+            // 更新 URL，不刷新页面
+            window.history.replaceState(null, '', `/write?id=${targetId}`);
+          }
+        }
+
+        // 更新文章分数和反馈
+        if (targetId) {
+          await updateEssay(targetId, {
+            content: normalizedContent, // 顺便保存最新内容
+            ai_score: data.score,
+            ai_feedback: {
+              score: data.score,
+              summary: data.summary,
+              breakdown: data.breakdown,
+              annotations: data.annotations,
+            },
+          });
+        }
+      } catch (saveError) {
+        console.error('保存批改结果失败:', saveError);
+        // 不阻断用户查看结果，但可以 console 记录
+      }
+
     } catch (error) {
       setCorrectionError(error instanceof Error ? error.message : '批改服务暂时不可用');
     } finally {
