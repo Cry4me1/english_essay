@@ -3,20 +3,23 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { 
-  ArrowUpRight, 
-  CalendarRange, 
-  FilePenLine, 
-  TrendingUp, 
-  Clock, 
-  Zap, 
+import {
+  ArrowUpRight,
+  CalendarRange,
+  FilePenLine,
+  TrendingUp,
+  Clock,
+  Zap,
   BookOpen,
   ChevronRight,
   Lightbulb,
   LoaderCircle,
-  FileText
+  FileText,
+  Trash2
 } from "lucide-react";
 import type { Essay, VocabularyItem, PaginatedResponse } from "@/lib/types/database";
+import { deleteEssay } from "@/lib/api/essays";
+import { ScoreTrendChart } from "@/components/dashboard/ScoreTrendChart";
 
 // 热力图数据类型
 interface HeatmapCell {
@@ -31,25 +34,25 @@ const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // 新拟态风格的颜色渐变
 const getIntensityStyle = (intensity: number) => {
   const styles = [
-    { 
-      background: "var(--background)", 
-      boxShadow: "inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light)" 
+    {
+      background: "var(--background)",
+      boxShadow: "inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light)"
     },
-    { 
-      background: "rgba(91, 95, 199, 0.15)", 
-      boxShadow: "2px 2px 5px var(--shadow-dark), -2px -2px 5px var(--shadow-light)" 
+    {
+      background: "rgba(91, 95, 199, 0.15)",
+      boxShadow: "2px 2px 5px var(--shadow-dark), -2px -2px 5px var(--shadow-light)"
     },
-    { 
-      background: "rgba(91, 95, 199, 0.35)", 
-      boxShadow: "3px 3px 8px var(--shadow-dark), -3px -3px 8px var(--shadow-light)" 
+    {
+      background: "rgba(91, 95, 199, 0.35)",
+      boxShadow: "3px 3px 8px var(--shadow-dark), -3px -3px 8px var(--shadow-light)"
     },
-    { 
-      background: "rgba(91, 95, 199, 0.55)", 
-      boxShadow: "4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light)" 
+    {
+      background: "rgba(91, 95, 199, 0.55)",
+      boxShadow: "4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light)"
     },
-    { 
-      background: "linear-gradient(145deg, var(--accent-light), var(--accent))", 
-      boxShadow: "5px 5px 12px var(--shadow-dark), -5px -5px 12px var(--shadow-light), 0 0 15px var(--accent-glow)" 
+    {
+      background: "linear-gradient(145deg, var(--accent-light), var(--accent))",
+      boxShadow: "5px 5px 12px var(--shadow-dark), -5px -5px 12px var(--shadow-light), 0 0 15px var(--accent-glow)"
     },
   ];
   return styles[intensity] || styles[0];
@@ -81,7 +84,7 @@ function formatDate(dateStr: string): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
+
   if (diffDays === 0) {
     return `今天 · ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
   } else if (diffDays === 1) {
@@ -101,9 +104,30 @@ function getStatusText(essay: Essay): string {
 
 export default function DashboardPage() {
   const [essays, setEssays] = useState<Essay[]>([]);
+  const [allEssays, setAllEssays] = useState<Essay[]>([]); // 用于趋势图的所有文章
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // 删除文章
+  const handleDeleteEssay = async (e: React.MouseEvent, essayId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+
+    setDeletingId(essayId);
+    try {
+      await deleteEssay(essayId);
+      setEssays(prev => prev.filter(essay => essay.id !== essayId));
+    } catch (err) {
+      console.error('删除文章失败:', err);
+      setError('删除文章失败，请重试');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // 获取数据
   useEffect(() => {
@@ -113,14 +137,20 @@ export default function DashboardPage() {
 
       try {
         // 并行获取文章和生词
-        const [essaysRes, vocabRes] = await Promise.all([
+        const [essaysRes, allEssaysRes, vocabRes] = await Promise.all([
           fetch('/api/essays?limit=5'),
+          fetch('/api/essays?limit=100'), // 获取所有文章用于趋势图
           fetch('/api/vocabulary?limit=5'),
         ]);
 
         if (essaysRes.ok) {
           const essaysData: PaginatedResponse<Essay> = await essaysRes.json();
           setEssays(essaysData.data || []);
+        }
+
+        if (allEssaysRes.ok) {
+          const allEssaysData: PaginatedResponse<Essay> = await allEssaysRes.json();
+          setAllEssays(allEssaysData.data || []);
         }
 
         if (vocabRes.ok) {
@@ -142,7 +172,7 @@ export default function DashboardPage() {
   const stats = useMemo(() => {
     const totalWords = essays.reduce((sum, e) => sum + (e.word_count || 0), 0);
     const scoredEssays = essays.filter(e => e.ai_score !== null);
-    const avgScore = scoredEssays.length > 0 
+    const avgScore = scoredEssays.length > 0
       ? (scoredEssays.reduce((sum, e) => sum + (e.ai_score || 0), 0) / scoredEssays.length).toFixed(1)
       : '-';
 
@@ -158,7 +188,7 @@ export default function DashboardPage() {
   const heatmapData = useMemo((): HeatmapCell[] => {
     const now = new Date();
     const cells: HeatmapCell[] = [];
-    
+
     // 统计每天的写作量
     const dailyWords: Record<string, number> = {};
     essays.forEach(essay => {
@@ -173,7 +203,7 @@ export default function DashboardPage() {
       date.setDate(date.getDate() - i);
       const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       const words = dailyWords[key] || 0;
-      
+
       // 根据字数计算强度 (0-4)
       let intensity = 0;
       if (words > 0) intensity = 1;
@@ -255,7 +285,7 @@ export default function DashboardPage() {
               <p className="text-[10px] uppercase tracking-[0.2em]" style={{ color: "var(--muted)" }}>
                 {stat.label}
               </p>
-              <div 
+              <div
                 className="icon-container h-8 w-8 transition-all duration-300 group-hover:scale-110"
                 style={{ color: "var(--accent)" }}
               >
@@ -301,8 +331,8 @@ export default function DashboardPage() {
               {/* Day Labels */}
               <div className="flex flex-col gap-2 pr-4">
                 {dayLabels.map((label) => (
-                  <div 
-                    key={label} 
+                  <div
+                    key={label}
                     className="h-10 flex items-center text-xs"
                     style={{ color: "var(--muted)" }}
                   >
@@ -351,7 +381,7 @@ export default function DashboardPage() {
           </div>
         </motion.section>
 
-          {/* Vocabulary Section */}
+        {/* Vocabulary Section */}
         <motion.section
           variants={itemVariants}
           className="neu-float p-6"
@@ -368,13 +398,16 @@ export default function DashboardPage() {
                 共 {vocabulary.length} 个单词
               </p>
             </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="icon-container h-8 w-8"
-            >
-              <FilePenLine className="h-4 w-4" style={{ color: "var(--muted)" }} />
-            </motion.button>
+            <Link href="/vocabulary">
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="icon-container h-8 w-8 cursor-pointer"
+                title="查看全部生词"
+              >
+                <ArrowUpRight className="h-4 w-4" style={{ color: "var(--accent)" }} />
+              </motion.div>
+            </Link>
           </div>
 
           <div className="space-y-4">
@@ -411,8 +444,8 @@ export default function DashboardPage() {
                         </span>
                       )}
                     </div>
-                    <ChevronRight 
-                      className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" 
+                    <ChevronRight
+                      className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
                       style={{ color: "var(--accent)" }}
                     />
                   </div>
@@ -432,6 +465,11 @@ export default function DashboardPage() {
           </div>
         </motion.section>
       </div>
+
+      {/* Score Trend Chart */}
+      <motion.div variants={itemVariants}>
+        <ScoreTrendChart essays={allEssays} />
+      </motion.div>
 
       {/* Recent Documents & Insights */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -494,31 +532,47 @@ export default function DashboardPage() {
                           <p className="font-medium text-sm pr-4 line-clamp-1">
                             {essay.title || "无标题"}
                           </p>
-                          {essay.ai_score !== null && (
-                            <span className="badge-accent text-[10px] flex-shrink-0">
-                              Band {essay.ai_score}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {essay.ai_score !== null && (
+                              <span className="badge-accent text-[10px] flex-shrink-0">
+                                Band {essay.ai_score}
+                              </span>
+                            )}
+                            <motion.button
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={(e) => handleDeleteEssay(e, essay.id)}
+                              disabled={deletingId === essay.id}
+                              className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/10"
+                              title="删除文章"
+                            >
+                              {deletingId === essay.id ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" style={{ color: "var(--error)" }} />
+                              ) : (
+                                <Trash2 className="h-4 w-4" style={{ color: "var(--error)" }} />
+                              )}
+                            </motion.button>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs" style={{ color: "var(--muted)" }}>
                             {formatDate(essay.updated_at)}
                           </span>
                           <div className="flex items-center gap-2">
-                            <span 
+                            <span
                               className="badge-neu text-[10px]"
-                              style={{ 
-                                background: statusText === "已批改" 
-                                  ? "var(--success-bg)" 
+                              style={{
+                                background: statusText === "已批改"
+                                  ? "var(--success-bg)"
                                   : statusText === "草稿"
-                                  ? "var(--warning-bg)"
-                                  : "var(--background-elevated)"
+                                    ? "var(--warning-bg)"
+                                    : "var(--background-elevated)"
                               }}
                             >
                               {statusText}
                             </span>
-                            <ArrowUpRight 
-                              className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" 
+                            <ArrowUpRight
+                              className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
                               style={{ color: "var(--accent)" }}
                             />
                           </div>
@@ -557,13 +611,13 @@ export default function DashboardPage() {
             ) : (
               <>
                 <h3 className="serif text-2xl">
-                  {essays.filter(e => e.ai_score !== null).length > 0 
-                    ? "继续保持，你的写作水平正在提升！" 
+                  {essays.filter(e => e.ai_score !== null).length > 0
+                    ? "继续保持，你的写作水平正在提升！"
                     : "提交文章进行 AI 批改，获取详细反馈"}
                 </h3>
                 <p className="text-sm" style={{ color: "var(--muted)" }}>
                   你已创建 {essays.length} 篇文章，累计 {essays.reduce((sum, e) => sum + (e.word_count || 0), 0).toLocaleString()} 词。
-                  {essays.filter(e => e.ai_score !== null).length > 0 
+                  {essays.filter(e => e.ai_score !== null).length > 0
                     ? `平均分数 Band ${(essays.filter(e => e.ai_score !== null).reduce((sum, e) => sum + (e.ai_score || 0), 0) / essays.filter(e => e.ai_score !== null).length).toFixed(1)}。`
                     : "使用批改功能获取详细的评分和改进建议。"
                   }
@@ -575,7 +629,7 @@ export default function DashboardPage() {
             {(() => {
               const latestScored = essays.find(e => e.ai_feedback?.breakdown);
               if (!latestScored?.ai_feedback?.breakdown) return null;
-              
+
               return (
                 <div className="space-y-3 pt-2">
                   <p className="text-xs" style={{ color: "var(--muted)" }}>最近批改得分明细</p>
@@ -607,19 +661,21 @@ export default function DashboardPage() {
             </div>
           </div>
         </motion.section>
-      </div>
+      </div >
 
       {/* Error Toast */}
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="fixed bottom-4 right-4 neu-raised p-4 rounded-xl"
-          style={{ borderLeft: "3px solid var(--error)" }}
-        >
-          <p className="text-sm">{error}</p>
-        </motion.div>
-      )}
-    </motion.div>
+      {
+        error && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-4 right-4 neu-raised p-4 rounded-xl"
+            style={{ borderLeft: "3px solid var(--error)" }}
+          >
+            <p className="text-sm">{error}</p>
+          </motion.div>
+        )
+      }
+    </motion.div >
   );
 }
