@@ -462,6 +462,20 @@ export default function DashboardPage() {
                 </motion.div>
               ))
             )}
+
+            {/* View All Link */}
+            {vocabulary.length > 0 && (
+              <Link href="/vocabulary">
+                <motion.div
+                  whileHover={{ x: 4 }}
+                  className="neu-inset p-3 cursor-pointer text-center group"
+                >
+                  <span className="text-sm font-medium" style={{ color: "var(--accent)" }}>
+                    查看全部生词 →
+                  </span>
+                </motion.div>
+              </Link>
+            )}
           </div>
         </motion.section>
       </div>
