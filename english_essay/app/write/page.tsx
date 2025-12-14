@@ -331,14 +331,25 @@ function WritePageContent() {
     loadEssay();
   }, [essayId, setTitle, setContent, setCurrentEssayId, setAiPanelMode]);
 
-  // Detect mobile screen
+  // Detect mobile screen with debounce for performance
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 1024);
     };
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+
+    // Debounce resize handler to avoid excessive re-renders
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const debouncedCheckMobile = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(checkMobile, 150);
+    };
+
+    checkMobile(); // Initial check
+    window.addEventListener("resize", debouncedCheckMobile);
+    return () => {
+      window.removeEventListener("resize", debouncedCheckMobile);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   // Dictionary popover states

@@ -1,24 +1,12 @@
 /**
  * 导出工具函数
  * 支持 PDF、Word (DOCX) 导出和打印功能
+ * 
+ * 性能优化：使用动态导入，只在用户实际导出时才加载库
  */
 
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import {
-    Document,
-    Packer,
-    Paragraph,
-    TextRun,
-    HeadingLevel,
-    AlignmentType,
-    BorderStyle,
-    Table,
-    TableRow,
-    TableCell,
-    WidthType,
-} from 'docx';
-import { saveAs } from 'file-saver';
+// 类型导入（不会被打包进 bundle）
+import type { jsPDF as JsPDFType } from 'jspdf';
 
 // 批改数据类型
 interface CorrectionBreakdown {
@@ -47,6 +35,62 @@ export interface ExportOptions {
     correctionData?: CorrectionData | null;
     includeScore?: boolean;
     includeAnnotations?: boolean;
+}
+
+/**
+ * 动态加载 html2canvas
+ */
+async function loadHtml2Canvas() {
+    const { default: html2canvas } = await import('html2canvas');
+    return html2canvas;
+}
+
+/**
+ * 动态加载 jsPDF
+ */
+async function loadJsPDF(): Promise<typeof JsPDFType> {
+    const { jsPDF } = await import('jspdf');
+    return jsPDF;
+}
+
+/**
+ * 动态加载 docx 相关模块
+ */
+async function loadDocx() {
+    const {
+        Document,
+        Packer,
+        Paragraph,
+        TextRun,
+        HeadingLevel,
+        AlignmentType,
+        BorderStyle,
+        Table,
+        TableRow,
+        TableCell,
+        WidthType,
+    } = await import('docx');
+    return {
+        Document,
+        Packer,
+        Paragraph,
+        TextRun,
+        HeadingLevel,
+        AlignmentType,
+        BorderStyle,
+        Table,
+        TableRow,
+        TableCell,
+        WidthType,
+    };
+}
+
+/**
+ * 动态加载 file-saver
+ */
+async function loadFileSaver() {
+    const { saveAs } = await import('file-saver');
+    return saveAs;
 }
 
 /**
@@ -135,9 +179,15 @@ function generateExportHTML(options: ExportOptions): string {
 }
 
 /**
- * 导出为 PDF
+ * 导出为 PDF (动态加载库)
  */
 export async function exportToPDF(options: ExportOptions): Promise<void> {
+    // 动态加载依赖
+    const [html2canvas, JsPDF] = await Promise.all([
+        loadHtml2Canvas(),
+        loadJsPDF(),
+    ]);
+
     // 创建临时容器
     const container = document.createElement('div');
     container.innerHTML = generateExportHTML(options);
@@ -159,7 +209,7 @@ export async function exportToPDF(options: ExportOptions): Promise<void> {
 
         // 创建 PDF
         const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({
+        const pdf = new JsPDF({
             orientation: 'portrait',
             unit: 'mm',
             format: 'a4',
@@ -199,9 +249,29 @@ export async function exportToPDF(options: ExportOptions): Promise<void> {
 }
 
 /**
- * 导出为 Word (DOCX)
+ * 导出为 Word (DOCX) - 动态加载库
  */
 export async function exportToWord(options: ExportOptions): Promise<void> {
+    // 动态加载依赖
+    const [docx, saveAs] = await Promise.all([
+        loadDocx(),
+        loadFileSaver(),
+    ]);
+
+    const {
+        Document,
+        Packer,
+        Paragraph,
+        TextRun,
+        HeadingLevel,
+        AlignmentType,
+        BorderStyle,
+        Table,
+        TableRow,
+        TableCell,
+        WidthType,
+    } = docx;
+
     const { title, content, correctionData, includeScore = true, includeAnnotations = true } = options;
     const date = new Date().toLocaleDateString('zh-CN', {
         year: 'numeric',
@@ -210,7 +280,8 @@ export async function exportToWord(options: ExportOptions): Promise<void> {
     });
     const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
 
-    const children: (Paragraph | Table)[] = [];
+    // 使用 unknown[] 避免类型问题
+    const children: unknown[] = [];
 
     // 标题
     children.push(
@@ -379,7 +450,8 @@ export async function exportToWord(options: ExportOptions): Promise<void> {
     const doc = new Document({
         sections: [{
             properties: {},
-            children,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            children: children as any[],
         }],
     });
 
@@ -390,7 +462,7 @@ export async function exportToWord(options: ExportOptions): Promise<void> {
 }
 
 /**
- * 打印预览
+ * 打印预览 (无需动态导入，使用浏览器原生功能)
  */
 export function printPreview(options: ExportOptions): void {
     const html = generateExportHTML(options);
