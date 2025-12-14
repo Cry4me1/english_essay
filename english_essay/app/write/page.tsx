@@ -233,7 +233,19 @@ function findTextMatches(content: string, annotations: Annotation[]): TextMatch[
   return matches;
 }
 
-export default function WritePage() {
+import { Suspense } from "react";
+// ... existing imports ...
+
+// Loading component
+function WritePageSkeleton() {
+  return (
+    <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center">
+      <LoaderCircle className="h-8 w-8 animate-spin text-accent" />
+    </div>
+  );
+}
+
+function WritePageContent() {
   const {
     title,
     setTitle,
@@ -248,6 +260,7 @@ export default function WritePage() {
   } = useWorkbenchStore();
 
   const searchParams = useSearchParams();
+
   const essayId = searchParams.get("id");
 
   const [formValues, setFormValues] = useState({
@@ -2214,5 +2227,13 @@ export default function WritePage() {
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+export default function WritePage() {
+  return (
+    <Suspense fallback={<WritePageSkeleton />}>
+      <WritePageContent />
+    </Suspense>
   );
 }
