@@ -22,6 +22,7 @@ import {
   BookOpen,
   RefreshCw,
   Volume2,
+  Lightbulb,
   Star,
   StarOff,
   Copy,
@@ -273,6 +274,10 @@ function WritePageContent() {
   const [correctionData, setCorrectionData] = useState<CorrectionPayload | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
+
+  // Brainstorming state
+  const [isBrainstorming, setIsBrainstorming] = useState(false);
+  const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
 
   const [resolvedAnnotations, setResolvedAnnotations] = useState<string[]>([]);
   const [selectionActive, setSelectionActive] = useState(false);
@@ -537,6 +542,36 @@ function WritePageContent() {
       setCorrectionError(error instanceof Error ? error.message : '批改服务暂时不可用');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  // Handle brainstorming
+  const handleBrainstorm = async () => {
+    if (isBrainstorming || !formValues.topic.trim()) return;
+
+    setIsBrainstorming(true);
+    setSuggestedTopics([]);
+
+    try {
+      const response = await fetch('/api/brainstorm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: formValues.topic }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Brainstorm failed');
+      }
+
+      const data = await response.json();
+      if (data.topics && Array.isArray(data.topics)) {
+        setSuggestedTopics(data.topics);
+      }
+    } catch (error) {
+      console.error('Brainstorm error:', error);
+      // Optional: show toast/error
+    } finally {
+      setIsBrainstorming(false);
     }
   };
 
@@ -1945,13 +1980,61 @@ function WritePageContent() {
                     <form className="space-y-4" onSubmit={handleGenerate}>
                       <div className="space-y-2">
                         <label className="text-xs" style={{ color: "var(--muted)" }}>Topic</label>
-                        <input
-                          value={formValues.topic}
-                          onChange={(e) => setFormValues((prev) => ({ ...prev, topic: e.target.value }))}
-                          className="neu-input w-full px-4 py-3 text-sm"
-                          placeholder="输入主题..."
-                        />
+                        <div className="relative">
+                          <input
+                            value={formValues.topic}
+                            onChange={(e) => setFormValues((prev) => ({ ...prev, topic: e.target.value }))}
+                            className="neu-input w-full px-4 py-3 text-sm pr-12"
+                            placeholder="输入主题..."
+                          />
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={handleBrainstorm}
+                            disabled={isBrainstorming || !formValues.topic.trim()}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg text-muted hover:text-accent disabled:opacity-50"
+                            title="AI 构思灵感"
+                          >
+                            {isBrainstorming ? (
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Lightbulb className="h-4 w-4" />
+                            )}
+                          </motion.button>
+                        </div>
                       </div>
+
+                      {/* Suggested Topics */}
+                      <AnimatePresence>
+                        {suggestedTopics.length > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="space-y-2 mb-2">
+                              <span className="text-xs" style={{ color: "var(--muted)" }}>AI 推荐主题</span>
+                              <div className="flex flex-col gap-2">
+                                {suggestedTopics.map((topic, index) => (
+                                  <motion.button
+                                    key={index}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: index * 0.05 }}
+                                    type="button"
+                                    onClick={() => setFormValues(prev => ({ ...prev, topic }))}
+                                    className="neu-button p-3 text-left text-xs hover:text-accent transition-colors"
+                                  >
+                                    {topic}
+                                  </motion.button>
+                                ))}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
