@@ -39,7 +39,8 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { addVocabulary } from "@/lib/api/vocabulary";
-import { createEssay, updateEssay } from "@/lib/api/essays";
+import { createEssay, updateEssay, getEssay } from "@/lib/api/essays";
+import { useSearchParams } from "next/navigation";
 
 // 题目预设（静态配置数据）
 const assistantPresets = [
@@ -129,18 +130,18 @@ interface PopoverPosition {
 }
 
 const typeStyles: Record<AnnotationType, { bg: string; color: string; label: string }> = {
-  grammar: { 
-    bg: "var(--error-bg)", 
+  grammar: {
+    bg: "var(--error-bg)",
     color: "#ef4444",
     label: "语法"
   },
-  vocabulary: { 
-    bg: "var(--warning-bg)", 
+  vocabulary: {
+    bg: "var(--warning-bg)",
     color: "#f59e0b",
     label: "词汇"
   },
-  logic: { 
-    bg: "rgba(91, 95, 199, 0.12)", 
+  logic: {
+    bg: "rgba(91, 95, 199, 0.12)",
     color: "var(--accent)",
     label: "逻辑"
   },
@@ -162,14 +163,14 @@ interface TextMatch {
 
 function findTextMatches(content: string, annotations: Annotation[]): TextMatch[] {
   const matches: TextMatch[] = [];
-  
+
   for (const annotation of annotations) {
     const searchText = annotation.originalText;
     if (!searchText) continue;
-    
+
     // Use indexOf for exact match first
     let index = content.indexOf(searchText);
-    
+
     if (index !== -1) {
       matches.push({
         annotationId: annotation.id,
@@ -181,16 +182,16 @@ function findTextMatches(content: string, annotations: Annotation[]): TextMatch[
       // Fuzzy match: normalize whitespace and try again
       const normalizedSearch = searchText.replace(/\s+/g, ' ').trim();
       const normalizedContent = content.replace(/\s+/g, ' ');
-      
+
       // Build a position map from normalized to original
       let originalPos = 0;
       let normalizedPos = 0;
       const posMap: number[] = [];
-      
+
       for (let i = 0; i < content.length; i++) {
         if (content[i].match(/\s/)) {
           // Skip consecutive whitespace in original
-          if (i === 0 || !content[i-1].match(/\s/)) {
+          if (i === 0 || !content[i - 1].match(/\s/)) {
             posMap[normalizedPos] = i;
             normalizedPos++;
           }
@@ -200,7 +201,7 @@ function findTextMatches(content: string, annotations: Annotation[]): TextMatch[
         }
       }
       posMap[normalizedPos] = content.length;
-      
+
       const normalizedIndex = normalizedContent.indexOf(normalizedSearch);
       if (normalizedIndex !== -1) {
         const startPos = posMap[normalizedIndex] ?? normalizedIndex;
@@ -215,7 +216,7 @@ function findTextMatches(content: string, annotations: Annotation[]): TextMatch[
             charsFound++;
           }
         }
-        
+
         matches.push({
           annotationId: annotation.id,
           start: startPos,
@@ -225,10 +226,10 @@ function findTextMatches(content: string, annotations: Annotation[]): TextMatch[
       }
     }
   }
-  
+
   // Sort by start position
   matches.sort((a, b) => a.start - b.start);
-  
+
   return matches;
 }
 
@@ -246,33 +247,61 @@ export default function WritePage() {
     isInVocabulary,
   } = useWorkbenchStore();
 
+  const searchParams = useSearchParams();
+  const essayId = searchParams.get("id");
+
   const [formValues, setFormValues] = useState({
     topic: title,
     tone: "Academic",
     words: 280,
   });
-  
+
   // Correction state
   const [correctionData, setCorrectionData] = useState<CorrectionPayload | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
-  
+
   const [resolvedAnnotations, setResolvedAnnotations] = useState<string[]>([]);
   const [selectionActive, setSelectionActive] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [focusMode, setFocusMode] = useState(false);
-  
+
   // Essay saving states
   const [currentEssayId, setCurrentEssayId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  
+
   // Mobile responsive states
   const [mobileTab, setMobileTab] = useState<"editor" | "ai">("editor");
   const [isMobile, setIsMobile] = useState(false);
   const [sheetAnnotation, setSheetAnnotation] = useState<Annotation | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+
+  // Load essay from ID
+  useEffect(() => {
+    async function loadEssay() {
+      if (!essayId) return;
+
+      try {
+        const res = await getEssay(essayId);
+        if (res.data) {
+          setTitle(res.data.title);
+          setContent(res.data.content);
+          setCurrentEssayId(res.data.id);
+          // If it has a score, maybe show correction panel?
+          if (res.data.ai_score !== null) {
+            setAiPanelMode('correct');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load essay:', error);
+        // Toast or error handling could go here
+      }
+    }
+
+    loadEssay();
+  }, [essayId, setTitle, setContent, setCurrentEssayId, setAiPanelMode]);
 
   // Detect mobile screen
   useEffect(() => {
@@ -343,9 +372,9 @@ export default function WritePage() {
   const annotationListRef = useRef<HTMLDivElement | null>(null);
 
   // Use Vercel AI SDK's useCompletion for streaming
-  const { 
-    completion, 
-    isLoading: isGenerating, 
+  const {
+    completion,
+    isLoading: isGenerating,
     complete,
     setCompletion,
   } = useCompletion({
@@ -390,7 +419,7 @@ export default function WritePage() {
   // Handle highlight click - mobile: open sheet, desktop: scroll to annotation card
   const handleHighlightClick = useCallback((annotationId: string) => {
     setSelectedAnnotationId(annotationId);
-    
+
     if (isMobile) {
       // Mobile: open bottom sheet with annotation details
       const annotation = correctionData?.annotations.find(a => a.id === annotationId);
@@ -416,9 +445,9 @@ export default function WritePage() {
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isGenerating) return;
-    
+
     setCompletion('');
-    
+
     await complete('', {
       body: {
         topic: formValues.topic,
@@ -431,23 +460,23 @@ export default function WritePage() {
   // Handle correction analysis
   const handleAnalyze = async () => {
     if (isAnalyzing || !normalizedContent.trim()) return;
-    
+
     setIsAnalyzing(true);
     setCorrectionError(null);
     setResolvedAnnotations([]);
-    
+
     try {
       const response = await fetch('/api/correct', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: normalizedContent }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || '批改失败');
       }
-      
+
       const data: CorrectionPayload = await response.json();
       setCorrectionData(data);
       setSelectedAnnotationId(data.annotations[0]?.id || null);
@@ -487,7 +516,7 @@ export default function WritePage() {
   const getCaretCoordinates = useCallback((textarea: HTMLTextAreaElement, position: number) => {
     const style = window.getComputedStyle(textarea);
     const mirror = document.createElement('div');
-    
+
     // Copy textarea styles to mirror
     const properties = [
       'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
@@ -498,31 +527,31 @@ export default function WritePage() {
       'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing', 'tabSize',
       'whiteSpace', 'wordWrap', 'wordBreak'
     ];
-    
+
     mirror.style.position = 'absolute';
     mirror.style.visibility = 'hidden';
     mirror.style.whiteSpace = 'pre-wrap';
-    
+
     properties.forEach(prop => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (mirror.style as any)[prop] = style.getPropertyValue(prop.replace(/([A-Z])/g, '-$1').toLowerCase());
     });
-    
+
     document.body.appendChild(mirror);
-    
+
     const text = textarea.value.substring(0, position);
     mirror.textContent = text;
-    
+
     const span = document.createElement('span');
     span.textContent = textarea.value.substring(position) || '.';
     mirror.appendChild(span);
-    
+
     const rect = textarea.getBoundingClientRect();
     const spanRect = span.getBoundingClientRect();
     const mirrorRect = mirror.getBoundingClientRect();
-    
+
     document.body.removeChild(mirror);
-    
+
     return {
       left: rect.left + (spanRect.left - mirrorRect.left) - textarea.scrollLeft,
       top: rect.top + (spanRect.top - mirrorRect.top) - textarea.scrollTop,
@@ -551,8 +580,8 @@ export default function WritePage() {
       if (wordPopover.visible || translationPopover.visible || synonymsPopover.visible) {
         return;
       }
-      if (!textareaRef.current?.contains(document.activeElement) && 
-          !document.activeElement?.closest('.dictionary-popover')) {
+      if (!textareaRef.current?.contains(document.activeElement) &&
+        !document.activeElement?.closest('.dictionary-popover')) {
         setSelectionActive(false);
         setSelectedText("");
         lastSelectionRef.current = { start: 0, end: 0, text: '' };
@@ -570,10 +599,10 @@ export default function WritePage() {
       if (!textareaRef.current) return;
       const { selectionStart, selectionEnd, value } = textareaRef.current;
       const hasSelection = selectionEnd - selectionStart > 0;
-      
+
       if (hasSelection) {
         const selected = value.substring(selectionStart, selectionEnd).trim();
-        
+
         // Only update if selection actually changed
         if (
           lastSelectionRef.current.start === selectionStart &&
@@ -581,22 +610,22 @@ export default function WritePage() {
         ) {
           return;
         }
-        
+
         lastSelectionRef.current = { start: selectionStart, end: selectionEnd, text: selected };
         setSelectedText(selected);
-        
+
         // Calculate position using mirror div technique
         const textarea = textareaRef.current;
         const coords = getCaretCoordinates(textarea, selectionStart);
         const endCoords = getCaretCoordinates(textarea, selectionEnd);
-        
+
         // Position menu at the middle of selection, above it
         const menuX = Math.max(10, Math.min((coords.left + endCoords.left) / 2 - 100, window.innerWidth - 280));
         const menuY = Math.max(10, coords.top - 50);
-        
+
         setFloatingMenuPosition({ x: menuX, y: menuY });
         setSelectionActive(true);
-        
+
         // Close other popovers when new selection is made
         setWordPopover(prev => ({ ...prev, visible: false }));
         setTranslationPopover(prev => ({ ...prev, visible: false }));
@@ -621,7 +650,7 @@ export default function WritePage() {
     if (selectionEnd - selectionStart === 0) return;
 
     const word = value.substring(selectionStart, selectionEnd).trim();
-    
+
     // Only lookup single words (no spaces)
     if (!word || word.includes(' ') || !/^[a-zA-Z'-]+$/.test(word)) return;
 
@@ -630,10 +659,10 @@ export default function WritePage() {
     const popoverWidth = 380;
     const popoverHeight = 420;
     const margin = 10;
-    
+
     // Calculate x position, ensure it stays within viewport
     let x = Math.max(margin, Math.min(coords.left, window.innerWidth - popoverWidth - margin));
-    
+
     // Calculate y position - prefer below selection, but go above if not enough space
     let y = coords.top + 30;
     if (y + popoverHeight > window.innerHeight - margin) {
@@ -696,10 +725,10 @@ export default function WritePage() {
     const popoverWidth = 420;
     const popoverHeight = 280;
     const margin = 10;
-    
+
     let x = Math.max(margin, Math.min(floatingMenuPosition.x, window.innerWidth - popoverWidth - margin));
     let y = floatingMenuPosition.y + 50;
-    
+
     // If not enough space below, show above the floating menu
     if (y + popoverHeight > window.innerHeight - margin) {
       y = Math.max(margin, floatingMenuPosition.y - popoverHeight - 10);
@@ -756,14 +785,14 @@ export default function WritePage() {
   // Handle Ask AI button click
   const handleAskAI = useCallback(() => {
     if (!selectedText) return;
-    
+
     // Switch to generate mode and set selected text as topic
     setAiPanelMode("generate");
     setFormValues(prev => ({
       ...prev,
       topic: selectedText,
     }));
-    
+
     // Close popovers
     closeAllPopovers();
   }, [selectedText, setAiPanelMode, closeAllPopovers]);
@@ -776,10 +805,10 @@ export default function WritePage() {
     const popoverWidth = 440;
     const popoverHeight = 400;
     const margin = 10;
-    
+
     let x = Math.max(margin, Math.min(floatingMenuPosition.x, window.innerWidth - popoverWidth - margin));
     let y = floatingMenuPosition.y + 50;
-    
+
     // If not enough space below, show above the floating menu
     if (y + popoverHeight > window.innerHeight - margin) {
       y = Math.max(margin, floatingMenuPosition.y - popoverHeight - 10);
@@ -836,12 +865,12 @@ export default function WritePage() {
   // Add word to vocabulary (save to backend)
   const handleAddToVocabulary = useCallback(async () => {
     if (!wordPopover.data) return;
-    
+
     const contextSentence = normalizedContent.substring(
       Math.max(0, normalizedContent.toLowerCase().indexOf(wordPopover.data.word.toLowerCase()) - 50),
       Math.min(normalizedContent.length, normalizedContent.toLowerCase().indexOf(wordPopover.data.word.toLowerCase()) + wordPopover.data.word.length + 50)
     );
-    
+
     // First add to local store for immediate UI feedback
     addToVocabulary({
       word: wordPopover.data.word,
@@ -850,7 +879,7 @@ export default function WritePage() {
       synonyms: wordPopover.data.synonyms,
       context: contextSentence,
     });
-    
+
     // Then save to backend
     try {
       await addVocabulary({
@@ -866,17 +895,17 @@ export default function WritePage() {
       // Word is still saved locally, so we don't need to show an error
     }
   }, [wordPopover.data, addToVocabulary, normalizedContent]);
-  
+
   // Save essay to backend
   const handleSaveEssay = useCallback(async () => {
     if (!title.trim() && !normalizedContent.trim()) {
       setSaveError('请输入标题或内容');
       return;
     }
-    
+
     setIsSaving(true);
     setSaveError(null);
-    
+
     try {
       if (currentEssayId) {
         // Update existing essay
@@ -971,14 +1000,14 @@ export default function WritePage() {
               )}
               {isSaving ? '保存中...' : '保存'}
             </motion.button>
-            
+
             {/* Last saved indicator */}
             {lastSavedAt && (
               <span className="text-xs self-center" style={{ color: "var(--muted)" }}>
                 已保存 {lastSavedAt.toLocaleTimeString()}
               </span>
             )}
-            
+
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -991,7 +1020,7 @@ export default function WritePage() {
               <Zap className="h-4 w-4 inline-block mr-2" />
               专注模式
             </motion.button>
-            
+
             <div className="neu-inset flex p-1 rounded-xl">
               <motion.button
                 whileTap={{ scale: 0.98 }}
@@ -1040,8 +1069,8 @@ export default function WritePage() {
                     ? "text-white shadow-md"
                     : "text-muted hover:text-foreground"
                 )}
-                style={mobileTab === "editor" ? { 
-                  background: "linear-gradient(145deg, var(--accent-light), var(--accent))" 
+                style={mobileTab === "editor" ? {
+                  background: "linear-gradient(145deg, var(--accent-light), var(--accent))"
                 } : {}}
               >
                 <Edit3 className="h-4 w-4" />
@@ -1056,8 +1085,8 @@ export default function WritePage() {
                     ? "text-white shadow-md"
                     : "text-muted hover:text-foreground"
                 )}
-                style={mobileTab === "ai" ? { 
-                  background: "linear-gradient(145deg, var(--accent-light), var(--accent))" 
+                style={mobileTab === "ai" ? {
+                  background: "linear-gradient(145deg, var(--accent-light), var(--accent))"
                 } : {}}
               >
                 <MessageSquare className="h-4 w-4" />
@@ -1075,9 +1104,9 @@ export default function WritePage() {
             <>
               <SheetHeader className="pb-2">
                 <div className="flex items-center gap-2">
-                  <span 
+                  <span
                     className="badge-neu text-[10px]"
-                    style={{ 
+                    style={{
                       background: typeStyles[sheetAnnotation.type]?.bg,
                       color: typeStyles[sheetAnnotation.type]?.color
                     }}
@@ -1090,12 +1119,12 @@ export default function WritePage() {
                   AI 为你的文本提供的修改建议
                 </SheetDescription>
               </SheetHeader>
-              
+
               <div className="space-y-4 px-4 pb-6 overflow-y-auto">
                 {/* Original Text */}
                 <div className="space-y-1">
                   <p className="text-xs" style={{ color: "var(--muted)" }}>原句</p>
-                  <div 
+                  <div
                     className="neu-inset p-3 rounded-xl"
                     style={{ borderLeft: `3px solid ${typeStyles[sheetAnnotation.type]?.color}` }}
                   >
@@ -1106,7 +1135,7 @@ export default function WritePage() {
                 {/* Suggestion */}
                 <div className="space-y-1">
                   <p className="text-xs" style={{ color: "var(--muted)" }}>建议修改为</p>
-                  <div 
+                  <div
                     className="neu-raised p-3 rounded-xl"
                     style={{ borderLeft: `3px solid var(--success)` }}
                   >
@@ -1314,8 +1343,8 @@ export default function WritePage() {
                             onClick={handleAddToVocabulary}
                             className={cn(
                               "p-2 rounded-full transition-all",
-                              isInVocabulary(wordPopover.data.word) 
-                                ? "neu-button-accent" 
+                              isInVocabulary(wordPopover.data.word)
+                                ? "neu-button-accent"
                                 : "neu-button"
                             )}
                             title={isInVocabulary(wordPopover.data.word) ? "已收藏" : "添加到词汇本"}
@@ -1564,7 +1593,7 @@ export default function WritePage() {
                             >
                               <div className="flex items-center justify-between mb-1.5">
                                 <span className="font-medium">{syn.word}</span>
-                                <span 
+                                <span
                                   className="text-[10px] px-2 py-0.5 rounded-full"
                                   style={{ background: style.bg, color: style.color }}
                                 >
@@ -1651,12 +1680,12 @@ export default function WritePage() {
                   {(() => {
                     const segments: React.ReactNode[] = [];
                     let lastEnd = 0;
-                    
+
                     // Filter out resolved annotations
                     const activeMatches = textMatches.filter(
                       m => !resolvedAnnotations.includes(m.annotationId)
                     );
-                    
+
                     activeMatches.forEach((match, index) => {
                       // Add text before this match
                       if (match.start > lastEnd) {
@@ -1666,11 +1695,11 @@ export default function WritePage() {
                           </span>
                         );
                       }
-                      
+
                       // Add highlighted match
                       const isSelected = selectedAnnotationId === match.annotationId;
                       const style = typeStyles[match.type];
-                      
+
                       segments.push(
                         <span
                           key={`match-${match.annotationId}`}
@@ -1685,10 +1714,10 @@ export default function WritePage() {
                           {normalizedContent.substring(match.start, match.end)}
                         </span>
                       );
-                      
+
                       lastEnd = match.end;
                     });
-                    
+
                     // Add remaining text
                     if (lastEnd < normalizedContent.length) {
                       segments.push(
@@ -1697,12 +1726,12 @@ export default function WritePage() {
                         </span>
                       );
                     }
-                    
+
                     return segments;
                   })()}
                 </div>
               )}
-              
+
               <textarea
                 ref={textareaRef}
                 value={normalizedContent}
@@ -1735,14 +1764,14 @@ export default function WritePage() {
                 exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden"
               >
-                <div 
+                <div
                   className="neu-inset p-4 rounded-2xl"
                   style={{ borderLeft: `3px solid ${typeStyles[selectedAnnotation.type]?.color || "var(--accent)"}` }}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <span 
+                    <span
                       className="badge-neu text-[10px]"
-                      style={{ 
+                      style={{
                         background: typeStyles[selectedAnnotation.type]?.bg,
                         color: typeStyles[selectedAnnotation.type]?.color
                       }}
@@ -1791,7 +1820,7 @@ export default function WritePage() {
                         ? "text-white shadow-md"
                         : "neu-button"
                     )}
-                    style={isSelected ? { 
+                    style={isSelected ? {
                       background: `linear-gradient(145deg, ${typeStyles[annotation.type]?.color}, ${typeStyles[annotation.type]?.color}dd)`,
                       boxShadow: `0 4px 15px ${typeStyles[annotation.type]?.bg}`
                     } : {}}
@@ -1906,7 +1935,7 @@ export default function WritePage() {
                           </span>
                         )}
                       </div>
-                      
+
                       <div className="max-h-64 overflow-y-auto">
                         {!completion ? (
                           <p className="text-sm" style={{ color: "var(--muted)" }}>
@@ -1978,7 +2007,7 @@ export default function WritePage() {
                           Correction
                         </span>
                       </div>
-                      
+
                       <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
@@ -2046,7 +2075,7 @@ export default function WritePage() {
                           <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
                             {correctionData.summary}
                           </p>
-                          
+
                           {/* Score Breakdown */}
                           <div className="mt-5 space-y-3">
                             {correctionData.breakdown.map((item) => (
@@ -2069,7 +2098,7 @@ export default function WritePage() {
                         </div>
 
                         {/* Annotations List */}
-                        <div 
+                        <div
                           ref={annotationListRef}
                           className="space-y-3 max-h-[400px] overflow-y-auto pr-1 scroll-smooth"
                         >
@@ -2077,7 +2106,7 @@ export default function WritePage() {
                             const isResolved = resolvedAnnotations.includes(annotation.id);
                             const isSelected = selectedAnnotationId === annotation.id;
                             const style = typeStyles[annotation.type];
-                            
+
                             return (
                               <motion.div
                                 key={annotation.id}
@@ -2094,7 +2123,7 @@ export default function WritePage() {
                                 style={isSelected ? { borderLeft: `3px solid ${style?.color}` } : {}}
                               >
                                 <div className="flex items-center justify-between mb-2">
-                                  <span 
+                                  <span
                                     className="badge-neu text-[10px]"
                                     style={{ background: style?.bg, color: style?.color }}
                                   >
@@ -2107,7 +2136,7 @@ export default function WritePage() {
                                     </span>
                                   )}
                                 </div>
-                                
+
                                 <p className="text-sm line-clamp-2 mb-1">{annotation.originalText}</p>
                                 <p className="text-sm mb-1" style={{ color: style?.color }}>
                                   {annotation.suggestion}
@@ -2158,7 +2187,7 @@ export default function WritePage() {
           )}
         </AnimatePresence>
       </div>
-      
+
       {/* Save Error Toast */}
       <AnimatePresence>
         {saveError && (

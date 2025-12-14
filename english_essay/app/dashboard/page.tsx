@@ -485,7 +485,7 @@ export default function DashboardPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                   >
-                    <Link href="/write">
+                    <Link href={`/write?id=${essay.id}`}>
                       <motion.div
                         whileHover={{ scale: 1.01, x: 4 }}
                         className="neu-raised p-4 cursor-pointer group"
