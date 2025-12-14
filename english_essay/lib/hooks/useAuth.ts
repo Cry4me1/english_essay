@@ -52,9 +52,9 @@ export function useAuth(): UseAuthReturn {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setUser(mapUser(session?.user ?? null));
-        
+
         if (event === 'SIGNED_IN') {
-          router.refresh();
+          // router.refresh();
         } else if (event === 'SIGNED_OUT') {
           router.push('/');
           router.refresh();

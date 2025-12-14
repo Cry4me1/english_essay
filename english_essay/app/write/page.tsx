@@ -373,6 +373,9 @@ function WritePageContent() {
     error: null,
   });
 
+  // Pronunciation state
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+
   // Floating menu position - use ref to avoid re-renders during selection
   const [floatingMenuPosition, setFloatingMenuPosition] = useState<PopoverPosition>({ x: 0, y: 0 });
   const lastSelectionRef = useRef<{ start: number; end: number; text: string }>({ start: 0, end: 0, text: '' });
@@ -1006,6 +1009,26 @@ function WritePageContent() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
+  // Handle pronunciation play
+  const handlePlayPronunciation = useCallback(() => {
+    if (!wordPopover.data?.word || isPlayingAudio) return;
+
+    setIsPlayingAudio(true);
+    const utterance = new SpeechSynthesisUtterance(wordPopover.data.word);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.8;
+
+    utterance.onend = () => {
+      setIsPlayingAudio(false);
+    };
+
+    utterance.onerror = () => {
+      setIsPlayingAudio(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, [wordPopover.data, isPlayingAudio]);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1382,10 +1405,17 @@ function WritePageContent() {
                           <motion.button
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
-                            className="p-2 neu-button rounded-full"
+                            onClick={handlePlayPronunciation}
+                            className="p-2 neu-button rounded-full relative overflow-hidden"
                             title="发音"
                           >
-                            <Volume2 className="h-4 w-4" style={{ color: "var(--accent)" }} />
+                            <Volume2
+                              className={cn("h-4 w-4 transition-colors", isPlayingAudio && "text-accent animate-pulse")}
+                              style={{ color: isPlayingAudio ? "var(--accent)" : "var(--accent)" }}
+                            />
+                            {isPlayingAudio && (
+                              <span className="absolute inset-0 bg-accent/10 animate-ping rounded-full" />
+                            )}
                           </motion.button>
                           <motion.button
                             whileHover={{ scale: 1.1 }}
