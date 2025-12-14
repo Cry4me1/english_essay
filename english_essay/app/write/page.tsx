@@ -30,6 +30,9 @@ import {
   Edit3,
   MessageSquare,
   Save,
+  Send,
+  Bot,
+  CornerDownLeft,
 } from "lucide-react";
 import { useWorkbenchStore, VocabularyItem } from "@/lib/store/workbenchStore";
 import {
@@ -42,6 +45,7 @@ import {
 import { addVocabulary } from "@/lib/api/vocabulary";
 import { createEssay, updateEssay, getEssay } from "@/lib/api/essays";
 import { useSearchParams } from "next/navigation";
+import { ExportMenu } from "@/components/write/ExportMenu";
 
 // 题目预设（静态配置数据）
 const assistantPresets = [
@@ -122,6 +126,12 @@ interface SynonymItem {
 interface SynonymsResult {
   word: string;
   synonyms: SynonymItem[];
+}
+
+// Topic suggestion with translation
+interface TopicSuggestion {
+  topic: string;
+  translation: string;
 }
 
 // Popover position type
@@ -277,7 +287,7 @@ function WritePageContent() {
 
   // Brainstorming state
   const [isBrainstorming, setIsBrainstorming] = useState(false);
-  const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
+  const [suggestedTopics, setSuggestedTopics] = useState<TopicSuggestion[]>([]);
 
   const [resolvedAnnotations, setResolvedAnnotations] = useState<string[]>([]);
   const [selectionActive, setSelectionActive] = useState(false);
@@ -378,6 +388,16 @@ function WritePageContent() {
     error: null,
   });
 
+  // Ask AI popover state
+  const [askAiPopover, setAskAiPopover] = useState<{
+    visible: boolean;
+    position: PopoverPosition;
+  }>({
+    visible: false,
+    position: { x: 0, y: 0 },
+  });
+  const [askAiInput, setAskAiInput] = useState('');
+
   // Pronunciation state
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
@@ -402,6 +422,27 @@ function WritePageContent() {
     api: '/api/generate',
     streamProtocol: 'text',
   });
+
+  // Ask AI completion
+  const {
+    completion: askAiResponse,
+    isLoading: isAskingAi,
+    complete: completeAskAi,
+    setCompletion: setAskAiResponse,
+  } = useCompletion({
+    api: '/api/ask',
+    streamProtocol: 'text',
+  });
+
+  const handleAskAiSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!askAiInput.trim() || !selectedText) return;
+    completeAskAi(askAiInput, {
+      body: {
+        text: selectedText,
+      }
+    });
+  };
 
   useEffect(() => {
     if (correctionData?.annotations.length && !selectedAnnotationId) {
@@ -578,6 +619,12 @@ function WritePageContent() {
   const handleInsertToEditor = () => {
     if (!completion) return;
     setContent((prev) => `${prev.trim()}\n\n${completion}`.trim());
+
+    // Sync title if available directly from the generator form values
+    if (formValues.topic) {
+      setTitle(formValues.topic);
+    }
+
     setCompletion('');
   };
 
@@ -597,6 +644,7 @@ function WritePageContent() {
     setWordPopover(prev => ({ ...prev, visible: false }));
     setTranslationPopover(prev => ({ ...prev, visible: false }));
     setSynonymsPopover(prev => ({ ...prev, visible: false }));
+    setAskAiPopover(prev => ({ ...prev, visible: false }));
     setSelectionActive(false);
   }, []);
 
@@ -659,13 +707,13 @@ function WritePageContent() {
       return;
     }
     // Don't close if any popover is visible (user might be interacting with it)
-    if (wordPopover.visible || translationPopover.visible || synonymsPopover.visible) {
+    if (wordPopover.visible || translationPopover.visible || synonymsPopover.visible || askAiPopover.visible) {
       return;
     }
     // Delay to allow button clicks to register
     setTimeout(() => {
       // Re-check popovers after delay
-      if (wordPopover.visible || translationPopover.visible || synonymsPopover.visible) {
+      if (wordPopover.visible || translationPopover.visible || synonymsPopover.visible || askAiPopover.visible) {
         return;
       }
       if (!textareaRef.current?.contains(document.activeElement) &&
@@ -675,7 +723,7 @@ function WritePageContent() {
         lastSelectionRef.current = { start: 0, end: 0, text: '' };
       }
     }, 200);
-  }, [wordPopover.visible, translationPopover.visible, synonymsPopover.visible]);
+  }, [wordPopover.visible, translationPopover.visible, synonymsPopover.visible, askAiPopover.visible]);
 
   // Handle mouse up - finalize selection and show menu
   const handleMouseUp = useCallback(() => {
@@ -874,16 +922,32 @@ function WritePageContent() {
   const handleAskAI = useCallback(() => {
     if (!selectedText) return;
 
-    // Switch to generate mode and set selected text as topic
-    setAiPanelMode("generate");
-    setFormValues(prev => ({
-      ...prev,
-      topic: selectedText,
-    }));
+    // Calculate position - similar to other popovers
+    const popoverWidth = 380;
+    const popoverHeight = 400; // Expected height
+    const margin = 10;
 
-    // Close popovers
-    closeAllPopovers();
-  }, [selectedText, setAiPanelMode, closeAllPopovers]);
+    let x = Math.max(margin, Math.min(floatingMenuPosition.x, window.innerWidth - popoverWidth - margin));
+    let y = floatingMenuPosition.y + 50;
+
+    if (y + popoverHeight > window.innerHeight - margin) {
+      y = Math.max(margin, floatingMenuPosition.y - popoverHeight - 10);
+    }
+
+    setAskAiInput('');
+    setAskAiResponse('');
+    setAskAiPopover({
+      visible: true,
+      position: { x, y },
+    });
+
+    // Close other popovers and hide selection menu
+    setWordPopover(prev => ({ ...prev, visible: false }));
+    setTranslationPopover(prev => ({ ...prev, visible: false }));
+    setSynonymsPopover(prev => ({ ...prev, visible: false }));
+    setSelectionActive(false);
+
+  }, [selectedText, floatingMenuPosition, setAskAiResponse]);
 
   // Handle synonyms button click
   const handleSynonyms = useCallback(async () => {
@@ -1037,6 +1101,7 @@ function WritePageContent() {
       setWordPopover(prev => ({ ...prev, visible: false }));
       setTranslationPopover(prev => ({ ...prev, visible: false }));
       setSynonymsPopover(prev => ({ ...prev, visible: false }));
+      setAskAiPopover(prev => ({ ...prev, visible: false }));
     };
 
     // Use click instead of mousedown to avoid interfering with text selection
@@ -1108,6 +1173,13 @@ function WritePageContent() {
               )}
               {isSaving ? '保存中...' : '保存'}
             </motion.button>
+
+            {/* Export Menu */}
+            <ExportMenu
+              title={title}
+              content={normalizedContent}
+              correctionData={correctionData}
+            />
 
             {/* Last saved indicator */}
             {lastSavedAt && (
@@ -1749,6 +1821,133 @@ function WritePageContent() {
             )}
           </AnimatePresence>
 
+          {/* Ask AI Popover */}
+          <AnimatePresence>
+            {askAiPopover.visible && (
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                className="fixed dictionary-popover"
+                style={{
+                  left: askAiPopover.position.x,
+                  top: askAiPopover.position.y,
+                  maxWidth: '380px',
+                  width: '380px',
+                  zIndex: 10000,
+                }}
+              >
+                <div className="neu-raised p-4 rounded-2xl space-y-3">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-4 w-4" style={{ color: "var(--accent)" }} />
+                      <span className="text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                        Ask AI
+                      </span>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => setAskAiPopover(prev => ({ ...prev, visible: false }))}
+                      className="p-1 rounded-full hover:bg-background-elevated transition-colors"
+                    >
+                      <X className="h-4 w-4" style={{ color: "var(--muted)" }} />
+                    </motion.button>
+                  </div>
+
+                  {/* Selected Text Preview */}
+                  <div className="neu-inset p-3 rounded-xl max-h-24 overflow-y-auto">
+                    <p className="text-xs italic opacity-70 border-l-2 pl-2" style={{ borderColor: "var(--accent)" }}>
+                      {selectedText}
+                    </p>
+                  </div>
+
+                  {/* Response Area */}
+                  {askAiResponse && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="neu-inset p-3 rounded-xl bg-background/50 max-h-48 overflow-y-auto"
+                    >
+                      <p className="text-sm whitespace-pre-wrap">{askAiResponse}</p>
+                    </motion.div>
+                  )}
+
+                  {/* Input Area */}
+                  <form onSubmit={handleAskAiSubmit} className="relative">
+                    <input
+                      value={askAiInput}
+                      onChange={(e) => setAskAiInput(e.target.value)}
+                      placeholder="Ask anything about the text..."
+                      className="neu-input w-full pl-4 pr-10 py-2.5 text-sm"
+                      autoFocus
+                    />
+                    <motion.button
+                      type="submit"
+                      disabled={isAskingAi || !askAiInput.trim()}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                      {isAskingAi ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CornerDownLeft className="h-3.5 w-3.5" />
+                      )}
+                    </motion.button>
+                  </form>
+
+                  {/* Quick Actions (Optional) */}
+                  {!askAiResponse && !isAskingAi && (
+                    <div className="flex flex-wrap gap-2">
+                      {['Summarize', 'Explain Grammar', 'Rewrite'].map(action => (
+                        <button
+                          key={action}
+                          onClick={() => {
+                            setAskAiInput(action);
+                            completeAskAi(action, { body: { text: selectedText } });
+                          }}
+                          className="text-[10xs] px-2 py-1 rounded-md bg-background-elevated hover:bg-accent/10 hover:text-accent transition-colors border border-transparent hover:border-accent/20"
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Result Actions */}
+                  {askAiResponse && !isAskingAi && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => copyToClipboard(askAiResponse)}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-medium neu-button flex items-center justify-center gap-1.5"
+                      >
+                        <Copy className="h-3 w-3" />
+                        Copy
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (textareaRef.current) {
+                            const { selectionStart, selectionEnd, value } = textareaRef.current;
+                            const newContent = value.substring(0, selectionStart) + askAiResponse + value.substring(selectionEnd);
+                            setContent(newContent);
+                            setAskAiPopover(prev => ({ ...prev, visible: false }));
+                          }
+                        }}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-medium neu-button-accent flex items-center justify-center gap-1.5"
+                      >
+                        <ArrowUpRight className="h-3 w-3" />
+                        Replace
+                      </button>
+                    </div>
+                  )}
+
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Title Input */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
@@ -2015,19 +2214,26 @@ function WritePageContent() {
                             className="overflow-hidden"
                           >
                             <div className="space-y-2 mb-2">
-                              <span className="text-xs" style={{ color: "var(--muted)" }}>AI 推荐主题</span>
+                              <span className="text-xs" style={{ color: "var(--muted)" }}>AI 推荐主题 (悬浮查看翻译)</span>
                               <div className="flex flex-col gap-2">
-                                {suggestedTopics.map((topic, index) => (
+                                {suggestedTopics.map((item, index) => (
                                   <motion.button
                                     key={index}
                                     initial={{ opacity: 0, x: -10 }}
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: index * 0.05 }}
                                     type="button"
-                                    onClick={() => setFormValues(prev => ({ ...prev, topic }))}
-                                    className="neu-button p-3 text-left text-xs hover:text-accent transition-colors"
+                                    onClick={() => setFormValues(prev => ({ ...prev, topic: item.topic }))}
+                                    className="neu-button p-3 text-left text-xs hover:text-accent transition-colors group relative"
+                                    title={item.translation || item.topic}
                                   >
-                                    {topic}
+                                    <span>{item.topic}</span>
+                                    {/* 悬浮显示翻译的 Tooltip */}
+                                    {item.translation && (
+                                      <span className="absolute left-0 right-0 -bottom-8 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-background-elevated text-[10px] text-muted px-2 py-1 rounded-md shadow-lg z-10 pointer-events-none whitespace-nowrap overflow-hidden text-ellipsis">
+                                        {item.translation}
+                                      </span>
+                                    )}
                                   </motion.button>
                                 ))}
                               </div>

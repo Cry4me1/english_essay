@@ -18,7 +18,18 @@ export async function POST(req: Request) {
 
         const prompt = `Based on the broad topic "${topic}", suggest 5 specific, engaging, and suitable essay titles or prompts for an English writing task (IELTS/TOEFL level).
     
-    Output format: STRICT JSON array of strings. Example: ["Title 1", "Title 2", ...]
+    Output format: STRICT JSON object with a "topics" key containing an array of objects. Each object must have:
+    - "topic": the English essay title/prompt
+    - "translation": the Chinese translation of the topic
+
+    Example:
+    {
+      "topics": [
+        {"topic": "The Impact of Social Media on Modern Communication", "translation": "社交媒体对现代沟通的影响"},
+        {"topic": "Should Governments Regulate Artificial Intelligence?", "translation": "政府是否应该监管人工智能？"}
+      ]
+    }
+    
     Do not output anything else.`;
 
         const response = await client.chat.completions.create({
@@ -29,23 +40,51 @@ export async function POST(req: Request) {
             response_format: { type: 'json_object' }
         });
 
-        const content = response.choices[0]?.message?.content || '[]';
+        const content = response.choices[0]?.message?.content || '{}';
 
         // Attempt to parse JSON strictly
-        let suggestions = [];
+        interface TopicSuggestion {
+            topic: string;
+            translation: string;
+        }
+        let suggestions: TopicSuggestion[] = [];
         try {
             const parsed = JSON.parse(content);
             // Handle case where model wraps it in a key
             if (parsed.topics && Array.isArray(parsed.topics)) {
-                suggestions = parsed.topics;
+                suggestions = parsed.topics.map((item: any) => {
+                    if (typeof item === 'string') {
+                        return { topic: item, translation: '' };
+                    }
+                    return {
+                        topic: String(item.topic || item),
+                        translation: String(item.translation || '')
+                    };
+                });
             } else if (Array.isArray(parsed)) {
-                suggestions = parsed;
+                suggestions = parsed.map((item: any) => {
+                    if (typeof item === 'string') {
+                        return { topic: item, translation: '' };
+                    }
+                    return {
+                        topic: String(item.topic || item),
+                        translation: String(item.translation || '')
+                    };
+                });
             } else {
                 // Fallback: try to find array in object keys or values if structure is unexpected
                 const values = Object.values(parsed);
-                const arrayValue = values.find(v => Array.isArray(v));
+                const arrayValue = values.find(v => Array.isArray(v)) as any[] | undefined;
                 if (arrayValue) {
-                    suggestions = arrayValue;
+                    suggestions = arrayValue.map((item: any) => {
+                        if (typeof item === 'string') {
+                            return { topic: item, translation: '' };
+                        }
+                        return {
+                            topic: String(item.topic || item),
+                            translation: String(item.translation || '')
+                        };
+                    });
                 }
             }
         } catch (e) {
@@ -53,12 +92,12 @@ export async function POST(req: Request) {
             // Fallback manual extraction if JSON mode fails or returns text
             const matches = content.match(/"([^"]+)"/g);
             if (matches) {
-                suggestions = matches.map(s => s.replace(/"/g, ''));
+                suggestions = matches.map(s => ({ topic: s.replace(/"/g, ''), translation: '' }));
             }
         }
 
-        // Ensure we have strings
-        suggestions = suggestions.map((s: any) => String(s)).slice(0, 5);
+        // Ensure we have valid objects
+        suggestions = suggestions.slice(0, 5);
 
         return new Response(JSON.stringify({ topics: suggestions }), {
             headers: { 'Content-Type': 'application/json' },

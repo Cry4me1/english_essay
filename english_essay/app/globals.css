@@ -761,3 +761,82 @@ a:not([class]) {
 .animate-slide-up {
   animation: slide-up 0.3s ease-out forwards;
 }
+
+/* ==================== 打印样式 ==================== */
+@media print {
+  /* 隐藏非打印元素 */
+  .no-print,
+  header,
+  nav,
+  .neu-button,
+  .neu-button-accent,
+  .floating-menu,
+  .dictionary-popover,
+  [data-slot="sheet-content"],
+  [data-slot="sheet-overlay"] {
+    display: none !important;
+  }
+  
+  /* 打印友好的背景 */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 12pt !important;
+  }
+  
+  /* 去除新拟态阴影 */
+  .neu-float,
+  .neu-raised,
+  .neu-inset {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    background: white !important;
+  }
+  
+  /* 页面设置 */
+  @page {
+    margin: 2cm;
+    size: A4;
+  }
+  
+  /* 分页控制 */
+  .page-break {
+    page-break-before: always;
+  }
+  
+  .page-break-after {
+    page-break-after: always;
+  }
+  
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+  
+  /* 防止内容被截断 */
+  p, h1, h2, h3, li {
+    orphans: 3;
+    widows: 3;
+  }
+  
+  h1, h2, h3 {
+    page-break-after: avoid;
+  }
+  
+  /* 链接样式 */
+  a {
+    text-decoration: underline;
+    color: black !important;
+  }
+  
+  a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.8em;
+    color: #666;
+  }
+  
+  /* 图片打印优化 */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+}
